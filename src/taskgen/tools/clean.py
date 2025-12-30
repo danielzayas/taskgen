@@ -36,7 +36,7 @@ def build_clean_plan(
 
     files: List[Path] = []
     if include_ledgers:
-        files += [state_dir / "reversal.jsonl"]
+        files += [state_dir / "create.jsonl"]
     if include_cache:
         dirs.append(state_dir / "cache")
 

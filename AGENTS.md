@@ -42,11 +42,11 @@ export ANTHROPIC_API_KEY=<key>  # or Claude Code OAuth
 
 Entry point: `taskgen` (defined in `src/taskgen/cli.py`)
 
-### `taskgen reversal`
+### `taskgen create`
 Generate a single Harbor task from a merged PR.
 
 ```bash
-taskgen reversal --repo <owner/repo> --pr <number>
+taskgen create --repo <owner/repo> --pr <number>
 ```
 
 Key options:
@@ -278,7 +278,7 @@ Wrapper around Harbor CLI:
 
 All configuration is done via dataclasses in `config.py`:
 
-- **ReversalConfig** - Single PR → task conversion
+- **CreateConfig** - Single PR → task conversion
 - **FarmConfig** - Continuous PR farming
 - **ValidateConfig** - Task validation
 - **CleanConfig** - Artifact cleanup
@@ -299,7 +299,7 @@ State is persisted in `.state/`:
 
 ```
 .state/
-├── reversal.jsonl      # Processed PRs (deduplication)
+├── create.jsonl      # Processed PRs (deduplication)
 ├── stream_farm/        # Farm state per repo
 │   └── <repo>.json
 ├── repos/              # Cached git repos

@@ -16,7 +16,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.traceback import install as rich_traceback_install
 
-from taskgen.config import ReversalConfig
+from taskgen.config import CreateConfig
 from taskgen.tools.harbor_runner import run_harbor_agent, parse_harbor_reward
 from taskgen.tools.network_isolation import network_isolation
 from taskgen.tools.validation import ValidationError, run_nop_oracle
@@ -32,7 +32,7 @@ from .repo_cache import RepoCache
 
 def _display_header(console: Console, pipeline: PRToHarborPipeline, pr: int) -> None:
     """Display the initial header panel with repo and PR context."""
-    console.print(Rule(Text("Reversal Task Generation", style="bold cyan")))
+    console.print(Rule(Text("Task Generation", style="bold cyan")))
     info = Table(show_header=False, box=None)
     info.add_row("Repo", Text(pipeline.repo, style="bold"))
     info.add_row("PR", Text(str(pr), style="bold"))
@@ -372,8 +372,8 @@ def _run_harbor_validations(
     return results_rows, job_dirs
 
 
-def run_reversal(config: ReversalConfig) -> None:
-    """Convert a merged PR into a reversal-style Harbor task.
+def run_reversal(config: CreateConfig) -> None:
+    """Convert a merged PR into a Harbor task.
     
     Args:
         config: Typed configuration with repo, PR number, and options.
@@ -397,7 +397,7 @@ def run_reversal(config: ReversalConfig) -> None:
         # Lowercase repo for consistency (GitHub is case-insensitive, Docker requires lowercase)
         repo_key = f"{pipeline.repo.lower()}#{config.pr}"
         state_dir: Path = config.state_dir or Path(".state")
-        state_file = state_dir / "reversal.jsonl"
+        state_file = state_dir / "create.jsonl"
         if _check_dedupe(console, repo_key, state_file, config.force):
             return
 

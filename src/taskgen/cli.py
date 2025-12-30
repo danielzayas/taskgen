@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from harbor.models.environment_type import EnvironmentType
-from taskgen.config import ReversalConfig, FarmConfig
+from taskgen.config import CreateConfig, FarmConfig
 from taskgen.reversal.reversal import run_reversal
 from taskgen.reversal import TrivialPRError, MissingIssueError
 from taskgen.tools.validation import ValidationError
@@ -40,16 +40,16 @@ def _root(
         raise typer.Exit()
 
 
-reversal_app = typer.Typer(
+create_app = typer.Typer(
     no_args_is_help=True,
     invoke_without_command=True,
     add_completion=False,
-    help="Convert a merged PR into a reversal-style task and validate",
+    help="Create a Harbor task from a merged PR and validate",
 )
 
 
-@reversal_app.callback()
-def reversal_cmd(
+@create_app.callback()
+def create_cmd(
         repo: str = typer.Option(..., help="GitHub repository (owner/repo or URL)"),
         pr: int = typer.Option(..., help="PR number"),
         output: Path = typer.Option(Path("tasks"), help="Output root", show_default=True),
@@ -68,7 +68,7 @@ def reversal_cmd(
         verbose: bool = typer.Option(False, "-v", "--verbose", help="Increase output verbosity"),
         quiet: bool = typer.Option(False, "-q", "--quiet", help="Reduce output verbosity"),
 ) -> None:
-    config = ReversalConfig(
+    config = CreateConfig(
         repo=repo,
         pr=pr,
         output=output,
@@ -94,7 +94,7 @@ def reversal_cmd(
         raise SystemExit(1)
 
 
-app.add_typer(reversal_app, name="reversal")
+app.add_typer(create_app, name="create")
 
 
 @app.command(help="Remove local artifacts: .state/* runs/jobs/logs; options for ledgers/cache/tasks")
@@ -102,7 +102,7 @@ def clean(
         state_dir: Path = typer.Option(Path(".state"), help="State dir to clean", show_default=True),
         output: Path = typer.Option(Path("tasks"), help="Tasks output root", show_default=True),
         all: bool = typer.Option(False, "--all", help="Also remove ledgers, cache, and tasks outputs"),
-        ledgers: bool = typer.Option(False, help="Also remove .state/reversal.jsonl"),
+        ledgers: bool = typer.Option(False, help="Also remove .state/create.jsonl"),
         cache: bool = typer.Option(False, help="Also remove .state/cache"),
         tasks: bool = typer.Option(False, help="Also remove tasks/"),
         dry_run: bool = typer.Option(False, help="Print what would be removed without deleting"),

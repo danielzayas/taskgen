@@ -8,10 +8,10 @@ from harbor.models.environment_type import EnvironmentType
 
 
 @dataclass(frozen=True)
-class ReversalConfig:
-    """Configuration for the reversal command (PR → Harbor task).
+class CreateConfig:
+    """Configuration for the create command (PR → Harbor task).
     
-    The reversal command uses a universal language-agnostic pipeline that works
+    The create command uses a universal language-agnostic pipeline that works
     for any repository. Claude Code analyzes the repo to detect language, runtime,
     build system, and test framework automatically.
     
@@ -151,7 +151,7 @@ class CleanConfig:
         state_dir: State directory to clean
         output_root: Tasks output root
         all_: Remove ledgers, cache, and tasks outputs
-        ledgers: Remove .state/reversal.jsonl
+        ledgers: Remove .state/create.jsonl
         cache: Remove .state/cache
         tasks: Remove tasks/
         dry_run: Print what would be removed without deleting

@@ -1,12 +1,12 @@
 from taskgen.config import (
-    ReversalConfig,
+    CreateConfig,
     FarmConfig,
     ValidateConfig,
     CleanConfig,
 )
 
 __all__ = [
-    "ReversalConfig",
+    "CreateConfig",
     "FarmConfig",
     "ValidateConfig",
     "CleanConfig",

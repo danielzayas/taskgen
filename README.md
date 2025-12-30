@@ -18,7 +18,7 @@ Each task reverses a merged PR to recreate the buggy state, validates tests fail
 uv pip install -e .
 
 # Generate a task from a merged PR
-taskgen reversal --repo axios/axios --pr 7150
+taskgen create --repo axios/axios --pr 7150
 
 # Or farm all PRs from a repo
 taskgen farm fastapi/fastapi
@@ -49,7 +49,7 @@ export ANTHROPIC_API_KEY=<api-key>  # or use Claude Code OAuth
 ## Usage
 
 **Commands:**
-- `taskgen reversal` — Generate task from a merged PR (validates by default)
+- `taskgen create` — Generate task from a merged PR (validates by default)
 - `taskgen farm` — Continuously process PRs from a repository
 - `taskgen validate` — Validate existing Harbor task (NOP + Oracle)
 - `taskgen analyze` — Deep analysis with agent trials to verify task quality
@@ -58,7 +58,7 @@ export ANTHROPIC_API_KEY=<api-key>  # or use Claude Code OAuth
 ### Generate a Task
 
 ```bash
-taskgen reversal --repo <owner/repo> --pr <num>
+taskgen create --repo <owner/repo> --pr <num>
 ```
 
 <details>
@@ -224,10 +224,10 @@ The pipeline uses a **language-agnostic approach**:
 
 ```bash
 # Generate a Python task
-taskgen reversal --repo kludex/starlette --pr 2949
+taskgen create --repo kludex/starlette --pr 2949
 
 # a JavaScript task
-taskgen reversal --repo axios/axios --pr 7150
+taskgen create --repo axios/axios --pr 7150
 
 # Continuous farming
 taskgen farm colinhacks/zod

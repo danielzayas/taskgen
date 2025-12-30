@@ -9,7 +9,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
-from taskgen.config import FarmConfig, ReversalConfig
+from taskgen.config import FarmConfig, CreateConfig
 from taskgen.reversal import TrivialPRError, MissingIssueError, ValidationError
 from taskgen.reversal.reversal import run_reversal
 from taskgen.reversal.task_reference import TaskReferenceStore
@@ -180,8 +180,8 @@ def _run_reversal_for_pr_impl(
             timestamp=_now_utc().isoformat(),
         )
 
-    # Build ReversalConfig for run_reversal (universal pipeline)
-    reversal_config = ReversalConfig(
+    # Build CreateConfig for run_reversal (universal pipeline)
+    reversal_config = CreateConfig(
         repo=config.repo,
         pr=pr.number,
         output=config.output,
@@ -253,7 +253,7 @@ def _run_reversal_for_pr_impl(
                 timestamp=_now_utc().isoformat(),
             )
 
-        # Task is already in Harbor format (reversal now generates directly to Harbor)
+        # Task is already in Harbor format (create now generates directly to Harbor)
         duration = time.time() - start
         gate_ok, gate_msg = _gate_task(task_id, tasks_root)
         if gate_ok:
