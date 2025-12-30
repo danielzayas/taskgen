@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, List, Optional
 
 from openai import OpenAI
 
 from .utils import CombinedPRTaskEvaluation
-
 
 COMBINED_SYSTEM_PROMPT = """You are evaluating GitHub pull requests and converting substantial ones into Harbor/Terminal-Bench tasks.
 
@@ -87,18 +85,22 @@ def _format_user_prompt(
     pr_title: str,
     pr_body: str,
     repo: str,
-    changed_files: List[str],
-    linked_issues: List[Dict] | None = None,
+    changed_files: list[str],
+    linked_issues: list[dict] | None = None,
     force_generate_instruction: bool = False,
 ) -> str:
     """Format user prompt for combined evaluation + task generation.
-    
+
     Prioritizes linked issues and avoids leaking solution details (files, diff, commits).
     """
     # Calculate basic stats for evaluation (no file names - just counts)
     total = len(changed_files or [])
     tests = sum(1 for p in (changed_files or []) if "test" in (p or "").lower())
-    docs = sum(1 for p in (changed_files or []) if any(seg in (p or "").lower() for seg in ("docs/", "doc/")))
+    docs = sum(
+        1
+        for p in (changed_files or [])
+        if any(seg in (p or "").lower() for seg in ("docs/", "doc/"))
+    )
     source_files = total - tests - docs
 
     # Modify ending instruction based on force_generate_instruction flag
@@ -119,16 +121,14 @@ def _format_user_prompt(
             "DO NOT mention specific file paths or function names unless they appear in the issue.\n"
             "If not substantial, explain why briefly and set instruction to null."
         )
-    
+
     # MODE 1: Linked issues exist - use ONLY issue content (preferred)
     if linked_issues and len(linked_issues) > 0:
         # Sort by body length (longer = more detail = more useful), take top 3
         sorted_issues = sorted(
-            linked_issues,
-            key=lambda x: len(x.get("body", "") or ""),
-            reverse=True
+            linked_issues, key=lambda x: len(x.get("body", "") or ""), reverse=True
         )[:3]
-        
+
         issue_lines = []
         for issue in sorted_issues:
             issue_num = issue.get("number", "")
@@ -137,13 +137,13 @@ def _format_user_prompt(
             # Truncate issue body if too long
             if len(issue_body) > 2500:
                 issue_body = issue_body[:2500] + "\n...(truncated)"
-            
+
             issue_lines.append(f"Issue #{issue_num}: {issue_title}")
             if issue_body:
                 issue_lines.append(f"{issue_body}\n")
-        
+
         issues_section = "\n".join(issue_lines)
-        
+
         return (
             f"Repository: {repo}\n"
             f"PR Title: {pr_title}\n\n"
@@ -151,12 +151,12 @@ def _format_user_prompt(
             f"Scope (for evaluation only): {source_files} source files, {tests} test files changed\n"
             + ending_instruction
         )
-    
+
     # MODE 2: No linked issue - use PR title + body, but warn LLM about solution leakage
     pr_body_truncated = (pr_body or "").strip()
     if len(pr_body_truncated) > 2500:
         pr_body_truncated = pr_body_truncated[:2500] + "\n...(truncated)"
-    
+
     return (
         f"Repository: {repo}\n"
         f"PR Title: {pr_title}\n\n"
@@ -173,18 +173,18 @@ def _format_user_prompt(
 
 
 def evaluate_and_generate_task(
-    metadata: Dict,
-    files: List[Dict],
+    metadata: dict,
+    files: list[dict],
     repo: str,
     model: str = "gpt-5-mini",
-    api_key: Optional[str] = None,
-    linked_issues: Optional[List[Dict]] = None,
+    api_key: str | None = None,
+    linked_issues: list[dict] | None = None,
     force_generate_instruction: bool = False,
 ) -> CombinedPRTaskEvaluation:
     """Evaluate PR substantiality and generate task description in one LLM call.
-    
+
     Uses OpenAI's structured outputs with the parse() method for type-safe responses.
-    
+
     Args:
         metadata: PR metadata dict
         files: List of changed files
@@ -193,10 +193,10 @@ def evaluate_and_generate_task(
         api_key: Optional OpenAI API key
         linked_issues: Optional list of linked issue dicts (with 'title', 'body', 'number')
         force_generate_instruction: If True, always generate an instruction even if PR seems trivial
-        
+
     Returns:
         CombinedPRTaskEvaluation with evaluation and task details
-        
+
     Raises:
         RuntimeError: If API key is missing or LLM call fails
     """
@@ -213,7 +213,10 @@ def evaluate_and_generate_task(
     changed_files = [f.get("filename", "") for f in files]
 
     user_prompt = _format_user_prompt(
-        pr_title, pr_body, repo, changed_files,
+        pr_title,
+        pr_body,
+        repo,
+        changed_files,
         linked_issues=linked_issues,
         force_generate_instruction=force_generate_instruction,
     )
@@ -233,26 +236,32 @@ def evaluate_and_generate_task(
             ],
             response_format=CombinedPRTaskEvaluation,
             max_completion_tokens=4096,
-            # reasoning_effort="low", # TODO: reasoning level? 
+            # reasoning_effort="low", # TODO: reasoning level?
         )
 
         result = completion.choices[0].message.parsed
         if result is None:
             raise RuntimeError("LLM returned no parsed result")
 
-        logger.debug(f"Combined evaluation: is_substantial={result.is_substantial}, reason={result.reason[:100]}...")
+        logger.debug(
+            f"Combined evaluation: is_substantial={result.is_substantial}, reason={result.reason[:100]}..."
+        )
 
         # Post-process: validate tags if substantial
         if result.is_substantial:
             if len(result.tags) < 1:
                 logger.error(f"❌ LLM generated only {len(result.tags)} tags")
                 raise RuntimeError(f"LLM generated only {len(result.tags)} tags")
-            
+
             # Validate instruction length
             if not result.instruction or len(result.instruction.strip()) < 100:
-                logger.error(f"❌ LLM generated instruction too short: {len(result.instruction) if result.instruction else 0} chars")
-                raise RuntimeError(f"Instruction too short: {len(result.instruction) if result.instruction else 0} chars (need 100+)")
-            
+                logger.error(
+                    f"❌ LLM generated instruction too short: {len(result.instruction) if result.instruction else 0} chars"
+                )
+                raise RuntimeError(
+                    f"Instruction too short: {len(result.instruction) if result.instruction else 0} chars (need 100+)"
+                )
+
             # Ensure defaults
             if not result.difficulty:
                 result.difficulty = "medium"
@@ -263,4 +272,4 @@ def evaluate_and_generate_task(
 
     except Exception as exc:
         logger.error(f"Combined LLM call failed: {exc}")
-        raise RuntimeError(f"Combined LLM call failed: {exc}")
+        raise RuntimeError(f"Combined LLM call failed: {exc}") from exc

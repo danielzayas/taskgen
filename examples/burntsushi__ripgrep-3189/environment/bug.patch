@@ -10,7 +10,7 @@ index 439c0b3..ed4f567 100644
 -  Fix gitignore bug when searching absolute paths with global gitignores.
  * [BUG #3180](https://github.com/BurntSushi/ripgrep/issues/3180):
    Fix a panicking bug when using `-U/--multiline` and `-r/--replace`.
- 
+
 diff --git a/crates/core/flags/hiargs.rs b/crates/core/flags/hiargs.rs
 index 526c91e..a98bde2 100644
 --- a/crates/core/flags/hiargs.rs
@@ -44,7 +44,7 @@ index 526c91e..a98bde2 100644
 @@ -950,12 +947,10 @@ impl State {
      fn new() -> anyhow::Result<State> {
          use std::io::IsTerminal;
- 
+
 -        let cwd = current_dir()?;
 -        log::debug!("read CWD from environment: {}", cwd.display());
          Ok(State {
@@ -172,7 +172,7 @@ index 2591771..8c1434a 100644
 -            );
 -            Gitignore::empty()
          };
- 
+
          Ignore(Arc::new(IgnoreInner {
 @@ -681,7 +638,6 @@ impl IgnoreBuilder {
              parent: None,
@@ -185,7 +185,7 @@ index 2591771..8c1434a 100644
 @@ -696,15 +652,6 @@ impl IgnoreBuilder {
          }))
      }
- 
+
 -    /// Set the current directory used for matching global gitignores.
 -    pub(crate) fn current_dir(
 -        &mut self,
@@ -212,7 +212,7 @@ index e3c604f..17eb3bd 100644
 -        }
 +        GitignoreBuilder::new("").build_global()
      }
- 
+
      /// Creates a new empty gitignore matcher that never matches anything.
 diff --git a/crates/ignore/src/walk.rs b/crates/ignore/src/walk.rs
 index f697c50..3e06fb3 100644
@@ -226,7 +226,7 @@ index f697c50..3e06fb3 100644
      sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
 -    sync::{Arc, OnceLock},
  };
- 
+
  use {
 @@ -492,18 +492,6 @@ pub struct WalkBuilder {
      threads: usize,
@@ -245,7 +245,7 @@ index f697c50..3e06fb3 100644
 -    global_gitignores_relative_to:
 -        OnceLock<Result<PathBuf, Arc<std::io::Error>>>,
  }
- 
+
  #[derive(Clone)]
 @@ -524,15 +512,8 @@ impl std::fmt::Debug for WalkBuilder {
              .field("min_depth", &self.min_depth)
@@ -270,7 +270,7 @@ index f697c50..3e06fb3 100644
 -            global_gitignores_relative_to: OnceLock::new(),
          }
      }
- 
+
 @@ -602,10 +582,7 @@ impl WalkBuilder {
              })
              .collect::<Vec<_>>()
@@ -379,7 +379,7 @@ index f697c50..3e06fb3 100644
 -        result.as_ref().ok().map(|path| &**path)
 -    }
  }
- 
+
  /// Walk is a recursive directory iterator over file paths in one or more
 diff --git a/tests/regression.rs b/tests/regression.rs
 index a196b40..93e4ba6 100644
@@ -388,7 +388,7 @@ index a196b40..93e4ba6 100644
 @@ -1655,56 +1655,6 @@ rgtest!(r3173_hidden_whitelist_only_dot, |dir: Dir, _: TestCommand| {
      eqnice!(cmd().args(&["--files", "./"]).stdout(), "./.foo.txt\n");
  });
- 
+
 -// See: https://github.com/BurntSushi/ripgrep/issues/3179
 -rgtest!(r3179_global_gitignore_cwd, |dir: Dir, mut cmd: TestCommand| {
 -    dir.create_dir("a/b/c");

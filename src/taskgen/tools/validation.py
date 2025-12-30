@@ -2,47 +2,47 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from harbor.models.environment_type import EnvironmentType
 from harbor.models.task.task import Task
 
-from .harbor_runner import run_harbor_agent, parse_harbor_reward
+from .harbor_runner import parse_harbor_reward, run_harbor_agent
 
 
 class ValidationError(Exception):
     """Raised when Harbor validation fails (NOP or Oracle)."""
+
     pass
 
 
 def validate_task_structure(task_dir: Path) -> bool:
     """Validate task structure using Harbor's Task model.
-    
+
     This ensures the generated task has all required files and valid structure
     before running Harbor validation.
-    
+
     Args:
         task_dir: Path to the task directory
-        
+
     Returns:
         True if task is valid
-        
+
     Raises:
         ValidationError: If task structure is invalid with details
     """
     logger = logging.getLogger("taskgen")
-    
+
     try:
         # Use Harbor's Task model to validate structure
         task = Task(task_dir)
-        
+
         # Verify required attributes are present
         if not task.instruction or len(task.instruction.strip()) < 10:
             raise ValidationError("Invalid instruction: too short or empty")
-        
+
         if not task.config:
             raise ValidationError("Missing or invalid task.toml")
-        
+
         # Verify required files exist
         paths = task.paths
         required_files = [
@@ -51,14 +51,14 @@ def validate_task_structure(task_dir: Path) -> bool:
             (paths.solve_path, "solution/solve.sh"),
             (paths.test_path, "tests/test.sh"),
         ]
-        
+
         for file_path, name in required_files:
             if not file_path.exists():
                 raise ValidationError(f"Missing required file: {name}")
-        
+
         logger.debug(f"✓ Task structure validated: {task.name}")
         return True
-        
+
     except ValidationError:
         raise
     except Exception as e:
@@ -70,22 +70,22 @@ def run_nop_oracle(
     task_id: str,
     dataset_path: Path,
     jobs_dir: Path,
-    timeout_multiplier: Optional[float] = None,
+    timeout_multiplier: float | None = None,
     environment: EnvironmentType = EnvironmentType.DOCKER,
 ) -> tuple[int | None, int | None, dict[str, Path | None]]:
     """Run both NOP and Oracle validations sequentially.
-    
+
     Validations are always run sequentially to avoid Docker conflict issues.
     NOP keeps the Docker image so Oracle can reuse it (much faster).
     Oracle deletes the image after running (cleanup).
-    
+
     Args:
         task_id: Task identifier
         dataset_path: Harbor dataset root path
         jobs_dir: Jobs directory path
         timeout_multiplier: Optional timeout multiplier
         environment: Environment type (docker, daytona, e2b, modal, runloop, gke)
-    
+
     Returns:
         Tuple of (nop_reward, oracle_reward, job_dirs) where:
         - nop_reward: 0 if tests fail on buggy code (expected), None if error
@@ -93,7 +93,7 @@ def run_nop_oracle(
         - job_dirs: Dict mapping "nop"/"oracle" to job result paths
     """
     job_dirs: dict[str, Path | None] = {"nop": None, "oracle": None}
-    
+
     # NOP: Keep image (delete_after=False) so Oracle can reuse it
     _, nop_result = run_harbor_agent(
         task_id=task_id,
@@ -107,7 +107,7 @@ def run_nop_oracle(
     )
     nop_reward = parse_harbor_reward(nop_result)
     job_dirs["nop"] = nop_result.parent if nop_result else None
-    
+
     # Oracle: Delete image after running (cleanup)
     _, oracle_result = run_harbor_agent(
         task_id=task_id,
@@ -121,7 +121,7 @@ def run_nop_oracle(
     )
     oracle_reward = parse_harbor_reward(oracle_result)
     job_dirs["oracle"] = oracle_result.parent if oracle_result else None
-    
+
     return nop_reward, oracle_reward, job_dirs
 
 
@@ -140,4 +140,3 @@ __all__ = [
     "run_harbor_agent",
     "parse_harbor_reward",
 ]
-

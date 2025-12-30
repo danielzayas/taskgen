@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 # The override content that enables network isolation
 # Docker Compose automatically merges docker-compose.override.yaml with docker-compose.yaml

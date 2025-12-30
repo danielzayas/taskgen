@@ -44,7 +44,7 @@ export OPENAI_API_KEY=<api-key>
 export ANTHROPIC_API_KEY=<api-key>  # or use Claude Code OAuth
 ```
 
-**Note:** Cloud sandbox environments (Daytona, E2B, Modal, etc.) require additional API keys. 
+**Note:** Cloud sandbox environments (Daytona, E2B, Modal, etc.) require additional API keys.
 
 ## Usage
 

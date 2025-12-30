@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
@@ -12,11 +12,11 @@ from rich.table import Table
 
 @dataclass
 class CleanPlan:
-    dirs: List[Path]
-    files: List[Path]
+    dirs: list[Path]
+    files: list[Path]
 
 
-def _existing_only(paths: Iterable[Path]) -> List[Path]:
+def _existing_only(paths: Iterable[Path]) -> list[Path]:
     return [p for p in paths if p and p.exists()]
 
 
@@ -34,7 +34,7 @@ def build_clean_plan(
         state_dir / "logs",
     ]
 
-    files: List[Path] = []
+    files: list[Path] = []
     if include_ledgers:
         files += [state_dir / "create.jsonl"]
     if include_cache:
@@ -56,7 +56,7 @@ def build_clean_plan(
     return CleanPlan(dirs=_existing_only(dirs), files=_existing_only(files))
 
 
-def execute_clean(plan: CleanPlan) -> Tuple[int, int]:
+def execute_clean(plan: CleanPlan) -> tuple[int, int]:
     n_dirs = 0
     n_files = 0
     for d in plan.dirs:
@@ -101,7 +101,9 @@ def run_clean(
         include_leftovers=include_leftovers,
     )
 
-    table = Table(title="Cleanup Plan", title_style="bold cyan", show_lines=False, header_style="bold")
+    table = Table(
+        title="Cleanup Plan", title_style="bold cyan", show_lines=False, header_style="bold"
+    )
     table.add_column("Type", no_wrap=True)
     table.add_column("Path", overflow="fold")
     for d in plan.dirs:

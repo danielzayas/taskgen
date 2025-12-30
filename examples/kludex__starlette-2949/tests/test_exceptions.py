@@ -3,7 +3,6 @@ from typing import Any
 
 import pytest
 from pytest import MonkeyPatch
-
 from starlette.exceptions import HTTPException, WebSocketException
 from starlette.middleware.exceptions import ExceptionMiddleware
 from starlette.requests import Request
@@ -64,7 +63,11 @@ router = Router(
         Route("/with_headers", endpoint=with_headers),
         Route("/handled_exc_after_response", endpoint=HandledExcAfterResponse()),
         WebSocketRoute("/runtime_error", endpoint=raise_runtime_error),
-        Route("/consume_body_in_endpoint_and_handler", endpoint=read_body_and_raise_exc, methods=["POST"]),
+        Route(
+            "/consume_body_in_endpoint_and_handler",
+            endpoint=read_body_and_raise_exc,
+            methods=["POST"],
+        ),
     ]
 )
 
@@ -111,10 +114,14 @@ def test_websockets_should_raise(client: TestClient) -> None:
             pass  # pragma: no cover
 
 
-def test_handled_exc_after_response(test_client_factory: TestClientFactory, client: TestClient) -> None:
+def test_handled_exc_after_response(
+    test_client_factory: TestClientFactory, client: TestClient
+) -> None:
     # A 406 HttpException is raised *after* the response has already been sent.
     # The exception middleware should raise a RuntimeError.
-    with pytest.raises(RuntimeError, match="Caught handled exception, but response already started."):
+    with pytest.raises(
+        RuntimeError, match="Caught handled exception, but response already started."
+    ):
         client.get("/handled_exc_after_response")
 
     # If `raise_server_exceptions=False` then the test client will still allow
@@ -188,7 +195,9 @@ def test_request_in_app_and_handler_is_the_same_object(client: TestClient) -> No
     assert response.json() == {"body": "Hello!"}
 
 
-def test_http_exception_does_not_use_threadpool(client: TestClient, monkeypatch: MonkeyPatch) -> None:
+def test_http_exception_does_not_use_threadpool(
+    client: TestClient, monkeypatch: MonkeyPatch
+) -> None:
     """
     Verify that handling HTTPException does not invoke run_in_threadpool,
     confirming the handler correctly runs in the main async context.
@@ -197,7 +206,9 @@ def test_http_exception_does_not_use_threadpool(client: TestClient, monkeypatch:
 
     # Replace run_in_threadpool with a function that raises an error
     def mock_run_in_threadpool(*args: Any, **kwargs: Any) -> None:
-        pytest.fail("run_in_threadpool should not be called for HTTP exceptions")  # pragma: no cover
+        pytest.fail(
+            "run_in_threadpool should not be called for HTTP exceptions"
+        )  # pragma: no cover
 
     # Apply the monkeypatch only during this test
     monkeypatch.setattr(_exception_handler, "run_in_threadpool", mock_run_in_threadpool)

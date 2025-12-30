@@ -10,7 +10,7 @@ index ed4f567..439c0b3 100644
 +  Fix gitignore bug when searching absolute paths with global gitignores.
  * [BUG #3180](https://github.com/BurntSushi/ripgrep/issues/3180):
    Fix a panicking bug when using `-U/--multiline` and `-r/--replace`.
- 
+
 diff --git a/crates/core/flags/hiargs.rs b/crates/core/flags/hiargs.rs
 index a98bde2..526c91e 100644
 --- a/crates/core/flags/hiargs.rs
@@ -44,7 +44,7 @@ index a98bde2..526c91e 100644
 @@ -947,10 +950,12 @@ impl State {
      fn new() -> anyhow::Result<State> {
          use std::io::IsTerminal;
- 
+
 +        let cwd = current_dir()?;
 +        log::debug!("read CWD from environment: {}", cwd.display());
          Ok(State {
@@ -172,7 +172,7 @@ index 8c1434a..2591771 100644
 +            );
 +            Gitignore::empty()
          };
- 
+
          Ignore(Arc::new(IgnoreInner {
 @@ -638,6 +681,7 @@ impl IgnoreBuilder {
              parent: None,
@@ -185,7 +185,7 @@ index 8c1434a..2591771 100644
 @@ -652,6 +696,15 @@ impl IgnoreBuilder {
          }))
      }
- 
+
 +    /// Set the current directory used for matching global gitignores.
 +    pub(crate) fn current_dir(
 +        &mut self,
@@ -212,7 +212,7 @@ index 17eb3bd..e3c604f 100644
 +            Err(err) => (Gitignore::empty(), Some(err.into())),
 +        }
      }
- 
+
      /// Creates a new empty gitignore matcher that never matches anything.
 diff --git a/crates/ignore/src/walk.rs b/crates/ignore/src/walk.rs
 index 3e06fb3..f697c50 100644
@@ -226,7 +226,7 @@ index 3e06fb3..f697c50 100644
      sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
 +    sync::{Arc, OnceLock},
  };
- 
+
  use {
 @@ -492,6 +492,18 @@ pub struct WalkBuilder {
      threads: usize,
@@ -245,7 +245,7 @@ index 3e06fb3..f697c50 100644
 +    global_gitignores_relative_to:
 +        OnceLock<Result<PathBuf, Arc<std::io::Error>>>,
  }
- 
+
  #[derive(Clone)]
 @@ -512,8 +524,15 @@ impl std::fmt::Debug for WalkBuilder {
              .field("min_depth", &self.min_depth)
@@ -270,7 +270,7 @@ index 3e06fb3..f697c50 100644
 +            global_gitignores_relative_to: OnceLock::new(),
          }
      }
- 
+
 @@ -582,7 +602,10 @@ impl WalkBuilder {
              })
              .collect::<Vec<_>>()
@@ -379,5 +379,5 @@ index 3e06fb3..f697c50 100644
 +        result.as_ref().ok().map(|path| &**path)
 +    }
  }
- 
+
  /// Walk is a recursive directory iterator over file paths in one or more

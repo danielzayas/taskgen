@@ -12,12 +12,12 @@ index e4b95ff993..7d4bbcc185 100644
 --- a/agent/agent.go
 +++ b/agent/agent.go
 @@ -1564,8 +1564,6 @@ func newConsulConfig(runtimeCfg *config.RuntimeConfig, logger hclog.Logger) (*co
- 
+
  		cfg.CAConfig = ca
  	}
 -	cfg.ConnectVirtualIPCIDRv4 = runtimeCfg.ConnectVirtualIPCIDRv4
 -	cfg.ConnectVirtualIPCIDRv6 = runtimeCfg.ConnectVirtualIPCIDRv6
- 
+
  	// copy over auto runtimeCfg settings
  	cfg.AutoConfigEnabled = runtimeCfg.AutoConfig.Enabled
 diff --git a/agent/config/builder.go b/agent/config/builder.go
@@ -47,7 +47,7 @@ index 38bd757917..63b73e9d64 100644
 -	if err := state.ValidateVirtualIPCIDRs(connectVirtualIPCIDRv4, connectVirtualIPCIDRv6); err != nil {
 -		return RuntimeConfig{}, err
 -	}
- 
+
  	// autoEncrypt and autoConfig implicitly turns on connect which is why
  	// they need to be above other settings that rely on connect.
 @@ -1011,8 +999,6 @@ func (b *builder) build() (rt RuntimeConfig, err error) {
@@ -69,7 +69,7 @@ index c2d9131860..b9179201d4 100644
  	MeshGatewayWANFederationEnabled *bool                  `mapstructure:"enable_mesh_gateway_wan_federation" json:"enable_mesh_gateway_wan_federation,omitempty"`
 -	VirtualIPCIDRv4                 *string                `mapstructure:"virtual_ip_cidr_v4" json:"virtual_ip_cidr_v4,omitempty"`
 -	VirtualIPCIDRv6                 *string                `mapstructure:"virtual_ip_cidr_v6" json:"virtual_ip_cidr_v6,omitempty"`
- 
+
  	// TestCALeafRootChangeSpread controls how long after a CA roots change before new leaf certs will be generated.
  	// This is only tuned in tests, generally set to 1ns to make tests deterministic with when to expect updated leaf
 diff --git a/agent/config/runtime.go b/agent/config/runtime.go
@@ -79,7 +79,7 @@ index 97de5bff0f..fb5728af34 100644
 @@ -526,12 +526,6 @@ type RuntimeConfig struct {
  	// datacenters should exclusively traverse mesh gateways.
  	ConnectMeshGatewayWANFederationEnabled bool
- 
+
 -	// ConnectVirtualIPCIDRv4 defines the IPv4 CIDR block used for automatic virtual IPs.
 -	ConnectVirtualIPCIDRv4 string
 -
@@ -122,7 +122,7 @@ index e50d664c02..574d169668 100644
 @@ -415,12 +415,6 @@ type Config struct {
  	// datacenters should exclusively traverse mesh gateways.
  	ConnectMeshGatewayWANFederationEnabled bool
- 
+
 -	// ConnectVirtualIPCIDRv4 defines the IPv4 CIDR block used for auto-allocated virtual IPs.
 -	ConnectVirtualIPCIDRv4 string
 -
@@ -143,7 +143,7 @@ index 283c080d5e..8442af4310 100644
 -	if err := state.SetVirtualIPConfig(config.ConnectVirtualIPCIDRv4, config.ConnectVirtualIPCIDRv6); err != nil {
 -		return nil, fmt.Errorf("failed to configure virtual IP ranges: %w", err)
 -	}
- 
+
  	// Create the tombstone GC.
  	gc, err := state.NewTombstoneGC(config.TombstoneTTL, config.TombstoneTTLGranularity)
 diff --git a/agent/consul/state/catalog.go b/agent/consul/state/catalog.go
@@ -152,7 +152,7 @@ index 561689af35..b24929f101 100644
 +++ b/agent/consul/state/catalog.go
 @@ -42,6 +42,26 @@ const (
  )
- 
+
  var (
 +	// startingVirtualIP is the start of the virtual IP range we assign to services.
 +	// The effective CIDR range is startingVirtualIP to (startingVirtualIP + virtualIPMaxOffset).
@@ -176,7 +176,7 @@ index 561689af35..b24929f101 100644
 +
  	ErrNodeNotFound = errors.New("node not found")
  )
- 
+
 @@ -1054,10 +1074,9 @@ func assignServiceVirtualIP(tx WriteTxn, idx uint64, psn structs.PeeredServiceNa
  				break
  			}
@@ -196,12 +196,12 @@ index 561689af35..b24929f101 100644
  	var vip net.IP
  	var err error
 -	cfg := currentVirtualIPConfig()
- 
+
  	ds, err := netutil.IsDualStack(nil, true)
  	if err != nil {
 @@ -1221,9 +1239,9 @@ func addIPOffset(b net.IP) (net.IP, error) {
  	}
- 
+
  	if ds {
 -		vip, err = addIPv6Offset(cfg.startingIPv6, b)
 +		vip, err = addIPv6Offset(startingVirtualIPv6, b)

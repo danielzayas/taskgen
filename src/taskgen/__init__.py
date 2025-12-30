@@ -1,8 +1,8 @@
 from taskgen.config import (
+    CleanConfig,
     CreateConfig,
     FarmConfig,
     ValidateConfig,
-    CleanConfig,
 )
 
 __all__ = [

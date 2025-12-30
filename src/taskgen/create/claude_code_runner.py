@@ -9,7 +9,6 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from taskgen.tools.harbor_runner import parse_harbor_reward
 
@@ -17,15 +16,16 @@ from taskgen.tools.harbor_runner import parse_harbor_reward
 @dataclass
 class MakeItWorkResult:
     """Result of the CC 'make it work' session."""
+
     success: bool
     nop_passed: bool  # reward=0 (tests fail on buggy code)
     oracle_passed: bool  # reward=1 (tests pass after fix)
-    error_message: Optional[str] = None
-    cc_output: Optional[str] = None
+    error_message: str | None = None
+    cc_output: str | None = None
 
 
 # The prompt for CC when using a reference task (much simpler task)
-CC_REFERENCE_PROMPT = '''
+CC_REFERENCE_PROMPT = """
 ## Your Task: Fill In Skeleton Using Reference Task as Example
 
 **GREAT NEWS**: We have a working task from PR #{reference_pr} (task: `{reference_task_id}`)!
@@ -154,7 +154,7 @@ For each validation attempt, increment the run number (-1, -2, -3, etc.):
 # Test NOP - should get reward=0
 harbor run --agent nop -p {dataset_path} -t {task_id} --jobs-dir {jobs_dir}/{task_id}-nop-1 --no-delete --env {environment}
 
-# Test Oracle - should get reward=1  
+# Test Oracle - should get reward=1
 harbor run --agent oracle -p {dataset_path} -t {task_id} --jobs-dir {jobs_dir}/{task_id}-oracle-1 --env {environment}
 ```
 
@@ -190,10 +190,10 @@ If harbor fails, check:
 - **Update test paths** - most PRs touch different test files
 
 You're done when both NOP (reward=0) and Oracle (reward=1) pass AND files are cleaned up!
-'''
+"""
 
 # The prompt for CC to analyze repo and fill in skeleton (from scratch)
-CC_MAKE_IT_WORK_PROMPT = '''
+CC_MAKE_IT_WORK_PROMPT = """
 ## Your Task: Make This Harbor Task Work
 
 You have a skeleton Harbor task that needs to be completed. Your job is to:
@@ -461,7 +461,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \\
 
 # Package manager setup - detect from lock file:
 #   pnpm-lock.yaml → pnpm
-#   yarn.lock → yarn  
+#   yarn.lock → yarn
 #   bun.lockb → bun
 #   package-lock.json or none → npm
 
@@ -638,7 +638,7 @@ After harbor runs, check `{jobs_dir}`:
 
 Inside each job directory:
 - `result.json` - Overall result with reward
-- `verifier_stdout.txt` - Test output  
+- `verifier_stdout.txt` - Test output
 - `verifier_stderr.txt` - Test errors
 
 ## Common Issues & Fixes
@@ -698,24 +698,24 @@ Inside each job directory:
 **Files to clean:**
 - `{task_dir}/environment/Dockerfile` - Remove TODOs, keep comments explaining non-standard steps
 - `{task_dir}/tests/test.sh` - Remove TODOs and all example templates, keep only test-specific comments
-'''
+"""
 
 
 # ANSI color codes
 class Colors:
-    BLUE = '\033[94m'      # Assistant messages
-    CYAN = '\033[96m'      # Tool use
-    MAGENTA = '\033[95m'   # Tool results
-    GREEN = '\033[92m'     # Success/final result
-    YELLOW = '\033[93m'    # System messages
-    RED = '\033[91m'       # Errors
-    BOLD = '\033[1m'
-    RESET = '\033[0m'
+    BLUE = "\033[94m"  # Assistant messages
+    CYAN = "\033[96m"  # Tool use
+    MAGENTA = "\033[95m"  # Tool results
+    GREEN = "\033[92m"  # Success/final result
+    YELLOW = "\033[93m"  # System messages
+    RED = "\033[91m"  # Errors
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
 
 
 def _print_stream_event(event: dict) -> None:
     """Parse and print a stream-json event from Claude Code.
-    
+
     Event types include:
     - assistant: Claude's text responses
     - user: User messages (shouldn't appear in -p mode)
@@ -725,7 +725,7 @@ def _print_stream_event(event: dict) -> None:
     - system: System messages
     """
     event_type = event.get("type", "")
-    
+
     if event_type == "assistant":
         # Assistant message content
         message = event.get("message", {})
@@ -740,17 +740,27 @@ def _print_stream_event(event: dict) -> None:
                     tool_name = block.get("name", "unknown").upper()
                     tool_input = block.get("input", {})
                     # Much less aggressive truncation - commands are important!
+                    summary: dict | str
                     if isinstance(tool_input, dict):
                         # For bash commands, show up to 2000 chars; for other inputs, 1000 chars
                         max_len = 2000 if tool_name.lower() == "bash" else 1000
-                        summary = {k: (v[:max_len] + "..." if isinstance(v, str) and len(v) > max_len else v) 
-                                   for k, v in tool_input.items()}
+                        summary = {
+                            k: (
+                                v[:max_len] + "..."
+                                if isinstance(v, str) and len(v) > max_len
+                                else v
+                            )
+                            for k, v in tool_input.items()
+                        }
                     else:
                         summary = str(tool_input)[:2000]
-                    print(f"\n{Colors.CYAN}{Colors.BOLD}{tool_name}{Colors.RESET}: {summary}", flush=True)
+                    print(
+                        f"\n{Colors.CYAN}{Colors.BOLD}{tool_name}{Colors.RESET}: {summary}",
+                        flush=True,
+                    )
             elif isinstance(block, str) and block.strip():
                 print(f"\n{Colors.BLUE}[Assistant]{Colors.RESET} {block}", flush=True)
-    
+
     elif event_type == "tool_result":
         # Tool execution result
         tool_name = event.get("tool_name", "unknown")
@@ -759,7 +769,7 @@ def _print_stream_event(event: dict) -> None:
         if isinstance(content, str) and len(content) > 2000:
             content = content[:2000] + f"... ({len(content)} chars total)"
         print(f"{Colors.MAGENTA}[Tool Result]{Colors.RESET} {tool_name}: {content}", flush=True)
-    
+
     elif event_type == "result":
         # Final result - print summary
         result_text = event.get("result", "")
@@ -767,19 +777,22 @@ def _print_stream_event(event: dict) -> None:
             # Less aggressive truncation for final results
             if len(result_text) > 3000:
                 result_text = result_text[:3000] + f"... ({len(result_text)} chars total)"
-            print(f"\n{Colors.GREEN}{Colors.BOLD}[Final Result]{Colors.RESET}\n{result_text}", flush=True)
-        
+            print(
+                f"\n{Colors.GREEN}{Colors.BOLD}[Final Result]{Colors.RESET}\n{result_text}",
+                flush=True,
+            )
+
         # Print cost info if available
         cost = event.get("total_cost_usd")
         if cost:
             print(f"{Colors.GREEN}[Cost]{Colors.RESET} ${cost:.4f}", flush=True)
-    
+
     elif event_type == "system":
         # System messages
         message = event.get("message", "")
         if message:
             print(f"{Colors.YELLOW}[System]{Colors.RESET} {message}", flush=True)
-    
+
     elif event_type == "error":
         # Error messages
         error = event.get("error", {})
@@ -797,9 +810,9 @@ def run_make_it_work_session(
     test_files: list[str],
     timeout: int = 900,  # 15 minutes
     verbose: bool = False,
-    reference_task_id: Optional[str] = None,
-    reference_pr: Optional[int] = None,
-    head_sha: Optional[str] = None,
+    reference_task_id: str | None = None,
+    reference_pr: int | None = None,
+    head_sha: str | None = None,
     environment: str = "docker",
 ) -> MakeItWorkResult:
     """
@@ -860,7 +873,9 @@ def run_make_it_work_session(
             head_sha=head_sha or "(check metadata)",
             environment=environment,
         )
-        logger.info(f"Using reference prompt (copying from {reference_task_id}, PR #{reference_pr})")
+        logger.info(
+            f"Using reference prompt (copying from {reference_task_id}, PR #{reference_pr})"
+        )
     else:
         prompt = CC_MAKE_IT_WORK_PROMPT.format(
             repo=repo,
@@ -877,7 +892,7 @@ def run_make_it_work_session(
 
     try:
         logger.info("Invoking Claude Code with %ds timeout...", timeout)
-        
+
         # Quick test to verify Claude Code is accessible (only in verbose mode)
         if verbose:
             try:
@@ -890,7 +905,7 @@ def run_make_it_work_session(
                 if test_result.returncode == 0:
                     print(f"[CC] Claude Code version: {test_result.stdout.strip()}", flush=True)
                 else:
-                    print(f"[CC] Warning: Claude Code version check failed", flush=True)
+                    print("[CC] Warning: Claude Code version check failed", flush=True)
             except Exception as e:
                 print(f"[CC] Warning: Could not verify Claude Code: {e}", flush=True)
 
@@ -898,24 +913,29 @@ def run_make_it_work_session(
         # for maximum context
         cmd = [
             "claude",
-            "-p", prompt,
-            "--allowedTools", "Read,Write,Edit,Glob,Grep,LS,Bash",
+            "-p",
+            prompt,
+            "--allowedTools",
+            "Read,Write,Edit,Glob,Grep,LS,Bash",
         ]
 
         if verbose:
             # Use --verbose AND --output-format stream-json for real-time streaming
             # Both are required together in print mode
             cmd.extend(["--verbose", "--output-format", "stream-json"])
-            
+
             # Run from project root so relative paths work (tasks/, harbor commands, etc.)
             # CC can still access repo via absolute path in the prompt
             project_root = os.getcwd()
-            print(f"[CC] Running: claude -p <prompt> --allowedTools Read,Write,Edit,Glob,Grep,LS,Bash --verbose --output-format stream-json", flush=True)
+            print(
+                "[CC] Running: claude -p <prompt> --allowedTools Read,Write,Edit,Glob,Grep,LS,Bash --verbose --output-format stream-json",
+                flush=True,
+            )
             print(f"[CC] Working directory: {project_root}", flush=True)
             print(f"[CC] Repo path: {repo_path}", flush=True)
             print(f"[CC] Task dir: {task_dir}", flush=True)
             print("-" * 60, flush=True)
-            
+
             # Use Popen to stream and parse JSON events in real-time
             try:
                 proc = subprocess.Popen(
@@ -926,10 +946,10 @@ def run_make_it_work_session(
                     text=True,
                     bufsize=1,  # Line buffered
                 )
-                
+
                 start_time = time.time()
-                final_result = None
-                
+                _final_result = None
+
                 # Stream and parse JSON events line-by-line
                 while True:
                     # Check timeout
@@ -940,37 +960,37 @@ def run_make_it_work_session(
                         logger.warning("CC session timed out after %ds", timeout)
                         print(f"\n[CC] Timed out after {timeout}s", flush=True)
                         return _check_validation_state(jobs_dir, task_id, logger, timed_out=True)
-                    
+
                     # Use select with timeout to avoid blocking indefinitely on readline
-                    if sys.platform != 'win32':
+                    if sys.platform != "win32":
                         ready, _, _ = select.select([proc.stdout], [], [], 1.0)  # 1 second timeout
                         if not ready:
                             continue
-                    
+
                     line = proc.stdout.readline()
                     if not line:
                         if proc.poll() is not None:
                             break
                         continue
-                    
+
                     # Parse JSON event and display relevant info
                     try:
                         event = json.loads(line.strip())
                         _print_stream_event(event)
-                        
-                        # Capture final result
+
+                        # Capture final result (not currently used)
                         if event.get("type") == "result":
-                            final_result = event
+                            _final_result = event
                     except json.JSONDecodeError:
                         # Not JSON, print as-is
-                        print(line, end='', flush=True)
-                
+                        print(line, end="", flush=True)
+
                 # Drain stderr
                 for line in proc.stderr:
-                    print(f"[stderr] {line}", end='', file=sys.stderr, flush=True)
-                
+                    print(f"[stderr] {line}", end="", file=sys.stderr, flush=True)
+
                 returncode = proc.returncode
-                
+
             except Exception as e:
                 logger.error("CC session failed: %s", e)
                 return MakeItWorkResult(
@@ -979,7 +999,7 @@ def run_make_it_work_session(
                     oracle_passed=False,
                     error_message=f"CC failed: {e}",
                 )
-            
+
             print("-" * 60, flush=True)
             print(f"[CC] Finished with exit code: {returncode}", flush=True)
 
@@ -1088,24 +1108,24 @@ def _parse_and_check_result(
 
 def _check_job_results(jobs_dir: Path, task_id: str) -> tuple[bool, bool]:
     """Check the actual job results to determine validation state.
-    
+
     Looks for job directories matching:
     - {task_id}-nop-N (where N is 1, 2, 3, etc.)
     - {task_id}-oracle-N
-    
+
     Finds the most recent result.json by modification time.
     """
     nop_passed = False
     oracle_passed = False
-    
+
     if not jobs_dir.exists():
         return nop_passed, oracle_passed
-    
+
     def find_most_recent_result(pattern: str) -> Path | None:
         """Find most recent result.json matching pattern."""
         best_path = None
         best_mtime = 0.0
-        
+
         for job_dir in jobs_dir.glob(pattern):
             if not job_dir.is_dir():
                 continue
@@ -1115,20 +1135,19 @@ def _check_job_results(jobs_dir: Path, task_id: str) -> tuple[bool, bool]:
                 if mtime > best_mtime:
                     best_mtime = mtime
                     best_path = result_file
-        
+
         return best_path
-    
+
     # Find most recent NOP result
     nop_result_path = find_most_recent_result(f"{task_id}-nop-*")
     if nop_result_path:
         reward = parse_harbor_reward(nop_result_path)
-        nop_passed = (reward == 0)
-    
-    # Find most recent Oracle result  
+        nop_passed = reward == 0
+
+    # Find most recent Oracle result
     oracle_result_path = find_most_recent_result(f"{task_id}-oracle-*")
     if oracle_result_path:
         reward = parse_harbor_reward(oracle_result_path)
-        oracle_passed = (reward == 1)
+        oracle_passed = reward == 1
 
     return nop_passed, oracle_passed
-

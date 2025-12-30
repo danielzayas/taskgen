@@ -13,10 +13,10 @@ index 6f14c29..e9d886e 100644
 @@ -1702,6 +1703,34 @@ export async function load({ fetch }) {
  }
  ```
- 
+
 +## 🔥 HTTP2
 +
-+In version `1.13.0`, experimental `HTTP2` support was added to the `http` adapter. 
++In version `1.13.0`, experimental `HTTP2` support was added to the `http` adapter.
 +The `httpVersion` option is now available to select the protocol version used.
 +Additional native options for the internal `session.request()` call can be passed via the `http2Options` config.
 +This config also includes the custom `sessionTimeout` parameter, which defaults to `1000ms`.
@@ -43,7 +43,7 @@ index 6f14c29..e9d886e 100644
 +```
 +
  ## Semver
- 
+
  Since Axios has reached a `v.1.0.0` we will fully embrace semver as per the spec [here](https://semver.org/)
 diff --git a/index.d.cts b/index.d.cts
 index 971a644..e3a06a3 100644
@@ -58,7 +58,7 @@ index 971a644..e3a06a3 100644
 +      sessionTimeout?: number;
 +    };
    }
- 
+
    // Alias
 diff --git a/index.d.ts b/index.d.ts
 index 554140e..a97882a 100644
@@ -73,7 +73,7 @@ index 554140e..a97882a 100644
 +    sessionTimeout?: number;
 +  };
  }
- 
+
  // Alias
 diff --git a/lib/adapters/http.js b/lib/adapters/http.js
 index a3489b2..ea69ff2 100755
@@ -89,7 +89,7 @@ index a3489b2..ea69ff2 100755
 @@ -37,6 +36,13 @@ const brotliOptions = {
    finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH
  }
- 
+
 +const {
 +  HTTP2_HEADER_SCHEME,
 +  HTTP2_HEADER_METHOD,
@@ -98,12 +98,12 @@ index a3489b2..ea69ff2 100755
 +} = constants;
 +
  const isBrotliSupported = utils.isFunction(zlib.createBrotliDecompress);
- 
+
  const {http: httpFollow, https: httpsFollow} = followRedirects;
 @@ -56,6 +62,66 @@ const flushOnFinish = (stream, [throttled, flush]) => {
    return throttled;
  }
- 
+
 +class Http2Sessions {
 +  constructor() {
 +    this.sessions = Object.create(null);
@@ -164,13 +164,13 @@ index a3489b2..ea69ff2 100755
 +
 +const http2Sessions = new Http2Sessions();
 +
- 
+
  /**
   * If the proxy or config beforeRedirects functions are defined, call them with the options
 @@ -168,16 +234,66 @@ const resolveFamily = ({address, family}) => {
- 
+
  const buildAddressEntry = (address, family) => resolveFamily(utils.isObject(address) ? address : {address, family});
- 
+
 +const http2Transport = {
 +  request(options, cb) {
 +      const authority = options.protocol + '//' + options.hostname + ':' + (options.port || 80);
@@ -221,7 +221,7 @@ index a3489b2..ea69ff2 100755
      let isDone;
      let rejected = false;
      let req;
- 
+
 +    httpVersion = Number(httpVersion);
 +    if (Number.isNaN(httpVersion)) {
 +      throw TypeError(`Invalid protocol version: '${config.httpVersion}' is not a number`);
@@ -238,7 +238,7 @@ index a3489b2..ea69ff2 100755
 @@ -194,8 +310,17 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
        }
      }
- 
+
 -    // temporary internal emitter until the AxiosRequest class will be implemented
 -    const emitter = new EventEmitter();
 +    const abortEmitter = new EventEmitter();
@@ -252,17 +252,17 @@ index a3489b2..ea69ff2 100755
 +    }
 +
 +    abortEmitter.once('abort', reject);
- 
+
      const onFinished = () => {
        if (config.cancelToken) {
 @@ -206,29 +331,40 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
          config.signal.removeEventListener('abort', abort);
        }
- 
+
 -      emitter.removeAllListeners();
 +      abortEmitter.removeAllListeners();
      }
- 
+
 -    onDone((value, isRejected) => {
 +    if (config.cancelToken || config.signal) {
 +      config.cancelToken && config.cancelToken.subscribe(abort);
@@ -291,13 +291,13 @@ index a3489b2..ea69ff2 100755
 +        onFinished();
        }
      });
- 
+
 -    function abort(reason) {
 -      emitter.emit('abort', !reason || reason.type ? new CanceledError(null, config, req) : reason);
 -    }
- 
+
 -    emitter.once('abort', reject);
- 
+
 -    if (config.cancelToken || config.signal) {
 -      config.cancelToken && config.cancelToken.subscribe(abort);
 -      if (config.signal) {
@@ -305,7 +305,7 @@ index a3489b2..ea69ff2 100755
 -      }
 -    }
 +
- 
+
      // Parse url
      const fullPath = buildFullPath(config.baseURL, config.url, config.allowAbsoluteUrls);
 @@ -436,7 +572,8 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
@@ -316,7 +316,7 @@ index a3489b2..ea69ff2 100755
 +      beforeRedirects: {},
 +      http2Options
      };
- 
+
      // cacheable-lookup integration hotfix
 @@ -453,18 +590,23 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
      let transport;
@@ -350,31 +350,31 @@ index a3489b2..ea69ff2 100755
        }
 -      transport = isHttpsRequest ? httpsFollow : httpFollow;
      }
- 
+
      if (config.maxBodyLength > -1) {
 @@ -484,7 +626,7 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
- 
+
        const streams = [res];
- 
+
 -      const responseLength = +res.headers['content-length'];
 +      const responseLength = utils.toFiniteNumber(res.headers['content-length']);
- 
+
        if (onDownloadProgress || maxDownloadRate) {
          const transformStream = new AxiosTransformStream({
 @@ -547,10 +689,7 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
- 
+
        responseStream = streams.length > 1 ? stream.pipeline(streams, utils.noop) : streams[0];
- 
+
 -      const offListeners = stream.finished(responseStream, () => {
 -        offListeners();
 -        onFinished();
 -      });
 +
- 
+
        const response = {
          status: res.statusCode,
 @@ -562,7 +701,7 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
- 
+
        if (responseType === 'stream') {
          response.data = responseStream;
 -        settle(resolve, reject, response);
@@ -394,7 +394,7 @@ index a3489b2..ea69ff2 100755
 @@ -618,7 +757,7 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
          });
        }
- 
+
 -      emitter.once('abort', err => {
 +      abortEmitter.once('abort', err => {
          if (!responseStream.destroyed) {
@@ -403,7 +403,7 @@ index a3489b2..ea69ff2 100755
 @@ -626,9 +765,12 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
        });
      });
- 
+
 -    emitter.once('abort', err => {
 -      reject(err);
 -      req.destroy(err);
@@ -414,11 +414,11 @@ index a3489b2..ea69ff2 100755
 +        req.destroy(err);
 +      }
      });
- 
+
      // Handle errors
 @@ -650,7 +792,7 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
        const timeout = parseInt(config.timeout, 10);
- 
+
        if (Number.isNaN(timeout)) {
 -        reject(new AxiosError(
 +        abort(new AxiosError(
@@ -439,9 +439,9 @@ index a3489b2..ea69ff2 100755
 -        abort();
        });
      }
- 
+
 @@ -705,7 +846,8 @@ export default isHttpAdapterSupported && function httpAdapter(config) {
- 
+
        data.pipe(req);
      } else {
 -      req.end(data);

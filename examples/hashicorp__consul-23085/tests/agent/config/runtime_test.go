@@ -6174,7 +6174,7 @@ func TestLoad_IntegrationWithFlags(t *testing.T) {
 							"default": true
 						}
 					]
-					} 
+					}
 				]
 			}
 			`,
@@ -6247,7 +6247,7 @@ func TestLoad_IntegrationWithFlags(t *testing.T) {
 							"default": false
 						}
 					]
-					} 
+					}
 				]
 			}
 			`,
@@ -6299,7 +6299,7 @@ func TestLoad_IntegrationWithFlags(t *testing.T) {
 							"default": true
 						}
 					]
-					} 
+					}
 				]
 			}
 			`,

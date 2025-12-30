@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import shutil
 import time
+import traceback
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from venv import create
 
 from rich.console import Console
 from rich.panel import Panel
 
-from taskgen.config import FarmConfig, CreateConfig
-from taskgen.create import TrivialPRError, MissingIssueError, ValidationError
+from taskgen.config import CreateConfig, FarmConfig
+from taskgen.create import MissingIssueError, TrivialPRError, ValidationError
 from taskgen.create.create import run_reversal
 from taskgen.create.task_reference import TaskReferenceStore
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _slug(repo: str) -> str:
@@ -33,6 +33,7 @@ def _task_id(repo: str, pr_number: int) -> str:
 @dataclass
 class PRCandidate:
     """A candidate PR for task generation."""
+
     number: int
     title: str
     created_at: str
@@ -47,6 +48,7 @@ class PRCandidate:
 @dataclass
 class TaskResult:
     """Result of processing a single PR into a task."""
+
     repo: str
     pr_number: int
     task_id: str
@@ -116,7 +118,7 @@ def _gate_task(
 ) -> tuple[bool, str]:
     """
     Validate that the task directory exists.
-    
+
     Returns:
         Tuple of (success, message)
     """
@@ -139,10 +141,11 @@ def _run_reversal_for_pr(
 
     # Wrap everything in try-except to catch unexpected errors
     try:
-        return _run_reversal_for_pr_impl(pr, config, tasks_root, console, task_id, harbor_dir, start)
+        return _run_reversal_for_pr_impl(
+            pr, config, tasks_root, console, task_id, harbor_dir, start
+        )
     except Exception as e:
         # Catch any unexpected exception and return proper error
-        import traceback
         error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
         console.print(f"[red]✗ PR #{pr.number}: {error_msg}[/red]")
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
@@ -168,9 +171,7 @@ def _run_reversal_for_pr_impl(
     start: float,
 ) -> TaskResult:
     if config.dry_run:
-        console.print(
-            f"[cyan]DRY RUN[/cyan] would generate task for PR #{pr.number} -> {task_id}"
-        )
+        console.print(f"[cyan]DRY RUN[/cyan] would generate task for PR #{pr.number} -> {task_id}")
         return TaskResult(
             repo=config.repo,
             pr_number=pr.number,
@@ -200,13 +201,13 @@ def _run_reversal_for_pr_impl(
         require_issue=config.issue_only,  # Pass through issue_only flag
         environment=config.environment,  # Pass through environment type
     )
-    
+
     console.print(f"[dim]Generating task for PR #{pr.number} using pipeline directly...[/dim]")
 
     # Capture any errors from the pipeline
     success = False
     error_msg = ""
-    
+
     try:
         # Call the pipeline directly instead of using subprocess
         run_reversal(create_config)
@@ -229,7 +230,6 @@ def _run_reversal_for_pr_impl(
         success = False
     except Exception as e:
         # Other errors
-        import traceback
         error_msg = f"{type(e).__name__}: {str(e)}"
         if config.verbose:
             console.print(f"[red]{traceback.format_exc()}[/red]")
@@ -241,7 +241,9 @@ def _run_reversal_for_pr_impl(
             if "trivial" in error_msg.lower():
                 failure_reason = "Trivial PR (skipped)"
             else:
-                failure_reason = "Pipeline reported success but Harbor task directory was not created."
+                failure_reason = (
+                    "Pipeline reported success but Harbor task directory was not created."
+                )
             _cleanup_task(task_id, tasks_root, console)
             console.print(f"[red]✗ PR #{pr.number}: {failure_reason}[/red]")
             return TaskResult(
@@ -259,7 +261,7 @@ def _run_reversal_for_pr_impl(
         gate_ok, gate_msg = _gate_task(task_id, tasks_root)
         if gate_ok:
             _print_success(console, pr, task_id, harbor_dir)
-            
+
             # Save task reference for future PRs (universal pipeline)
             try:
                 reference_store = TaskReferenceStore()
@@ -270,7 +272,7 @@ def _run_reversal_for_pr_impl(
                 )
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not save task reference: {e}[/yellow]")
-            
+
             return TaskResult(
                 repo=config.repo,
                 pr_number=pr.number,
@@ -280,7 +282,7 @@ def _run_reversal_for_pr_impl(
                 duration_seconds=round(duration, 2),
                 timestamp=_now_utc().isoformat(),
             )
-        
+
         # Gate failed
         failure_reason = gate_msg
         _cleanup_task(task_id, tasks_root, console)
@@ -298,9 +300,7 @@ def _run_reversal_for_pr_impl(
     # Pipeline failed
     failure_reason = _classify_failure(error_msg)
     _cleanup_task(task_id, tasks_root, console)
-    console.print(
-        f"[red]✗ PR #{pr.number}: {failure_reason}[/red]"
-    )
+    console.print(f"[red]✗ PR #{pr.number}: {failure_reason}[/red]")
     return TaskResult(
         repo=config.repo,
         pr_number=pr.number,

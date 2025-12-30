@@ -1,44 +1,47 @@
+from __future__ import annotations
+
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
 
 from harbor.models.task.paths import TaskPaths
 
+from .claude_code_runner import MakeItWorkResult, run_make_it_work_session
+from .diff_utils import extract_test_files, generate_diffs
 from .pr_fetcher import GitHubPRFetcher
 from .repo_cache import RepoCache
-from .diff_utils import generate_diffs, extract_test_files
+from .task_instruction import evaluate_and_generate_task
+from .task_reference import TaskReference, TaskReferenceStore
 from .task_skeleton import (
     UniversalSkeletonParams,
-    generate_universal_dockerfile,
-    generate_universal_test_sh,
-    generate_universal_solve_sh,
     generate_instruction_md,
     generate_task_toml,
+    generate_universal_dockerfile,
+    generate_universal_solve_sh,
+    generate_universal_test_sh,
 )
-from .claude_code_runner import run_make_it_work_session, MakeItWorkResult
-from .task_reference import TaskReferenceStore, TaskReference
-from .utils import identify_test_files, check_multi_file_requirement
-from .task_instruction import evaluate_and_generate_task
+from .utils import check_multi_file_requirement, identify_test_files
 
 
 class TrivialPRError(Exception):
     """Raised when a PR is too trivial to generate a task from."""
+
     pass
 
 
 class MissingIssueError(Exception):
     """Raised when a PR has no linked issue and require_issue is enabled."""
+
     pass
 
 
 class PRToHarborPipeline:
     """Orchestrates the conversion of a GitHub PR into a Harbor-compatible task."""
 
-    def __init__(self, repo: str, pr_number: int, github_token: Optional[str] = None):
+    def __init__(self, repo: str, pr_number: int, github_token: str | None = None):
         """
         Initialize the pipeline.
-        
+
         Args:
             repo: GitHub repo in format "owner/repo" or full URL
             pr_number: PR number
@@ -49,13 +52,13 @@ class PRToHarborPipeline:
         self.pr_number = pr_number
         # Lowercase repo name for task_id (used in Docker image names which must be lowercase)
         # Format: owner__repo-number (SWEBench convention)
-        repo_slug = self.repo.lower().replace('/', '__')
+        repo_slug = self.repo.lower().replace("/", "__")
         self.task_id = f"{repo_slug}-{pr_number}"
 
     def create_task_scaffold(self, tasks_root: Path, overwrite: bool = False) -> Path:
         """
         Create task directory structure.
-        
+
         Returns the task directory path.
         """
         logger = logging.getLogger("taskgen")
@@ -82,20 +85,20 @@ class PRToHarborPipeline:
         self,
         tasks_root: Path,
         overwrite: bool = False,
-        cache_dir: Optional[Path] = None,
-        repo_path: Optional[Path] = None,
-        metadata: Optional[dict] = None,
-        linked_issues: Optional[list] = None,
+        cache_dir: Path | None = None,
+        repo_path: Path | None = None,
+        metadata: dict | None = None,
+        linked_issues: list | None = None,
         run_cc: bool = True,
         cc_timeout: int = 900,
         verbose: bool = True,
         use_cache: bool = True,
-        state_dir: Optional[Path] = None,
+        state_dir: Path | None = None,
         require_minimum_difficulty: bool = True,
         min_source_files: int = 3,
         max_source_files: int = 10,
         environment: str = "docker",
-    ) -> tuple[Path, Optional[MakeItWorkResult], list[str], Optional[TaskReference]]:
+    ) -> tuple[Path, MakeItWorkResult | None, list[str], TaskReference | None]:
         """
         Generate a Harbor task for ANY language using a universal skeleton + Claude Code.
 
@@ -167,8 +170,12 @@ class PRToHarborPipeline:
             if not passes:
                 logger.warning("Skipping PR - source file count out of range: %s", reason)
                 raise TrivialPRError(f"PR #{self.pr_number}: {reason}")
-            logger.info("Multi-file check passed: %d source files (excluding tests, range: %d-%d)", 
-                       source_count, min_source_files, max_source_files)
+            logger.info(
+                "Multi-file check passed: %d source files (excluding tests, range: %d-%d)",
+                source_count,
+                min_source_files,
+                max_source_files,
+            )
         else:
             logger.info("Skipping minimum difficulty check (require_minimum_difficulty=False)")
 
@@ -227,17 +234,25 @@ class PRToHarborPipeline:
             logger.info("Evaluating PR and generating instruction...")
             try:
                 combined_result = evaluate_and_generate_task(
-                    metadata, files, self.repo, linked_issues=linked_issues,
-                    force_generate_instruction=(not require_minimum_difficulty)
+                    metadata,
+                    files,
+                    self.repo,
+                    linked_issues=linked_issues,
+                    force_generate_instruction=(not require_minimum_difficulty),
                 )
 
                 if not combined_result.is_substantial:
                     if require_minimum_difficulty:
                         logger.warning("Skipping trivial PR: %s", combined_result.reason)
                         shutil.rmtree(task_dir)
-                        raise TrivialPRError(f"PR #{self.pr_number} is too trivial: {combined_result.reason}")
+                        raise TrivialPRError(
+                            f"PR #{self.pr_number} is too trivial: {combined_result.reason}"
+                        )
                     else:
-                        logger.warning("PR deemed trivial by LLM, but proceeding anyway: %s", combined_result.reason)
+                        logger.warning(
+                            "PR deemed trivial by LLM, but proceeding anyway: %s",
+                            combined_result.reason,
+                        )
 
                 instruction_data = {
                     "instruction": combined_result.instruction,
@@ -296,7 +311,9 @@ class PRToHarborPipeline:
                         f"from PR #{task_reference.pr_number} (should be much faster)..."
                     )
                 else:
-                    logger.info("Running CC 'make it work' session (will detect language automatically)...")
+                    logger.info(
+                        "Running CC 'make it work' session (will detect language automatically)..."
+                    )
 
                 cc_result = run_make_it_work_session(
                     repo=self.repo,

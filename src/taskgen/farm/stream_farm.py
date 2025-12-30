@@ -6,9 +6,8 @@ import signal
 import subprocess
 import time
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List
 
 from rich.console import Console
 from rich.panel import Panel
@@ -19,28 +18,27 @@ from rich.text import Text
 from taskgen.config import FarmConfig
 
 from .farm_hand import (
-    _run_reversal_for_pr,
-    _slug,
-    _now_utc,
     PRCandidate,
     TaskResult,
+    _now_utc,
+    _run_reversal_for_pr,
+    _slug,
 )
 from .fetcher import StreamingPRFetcher, load_skip_list
 from .state import StreamState
-
 
 DOCKER_CLEANUP_CMD = "docker system prune -af"
 
 
 class StreamFarmer:
     """Manages continuous PR farming with streaming.
-    
+
     Orchestrates the process of:
     1. Streaming PRs from GitHub (via StreamingPRFetcher)
     2. Processing each PR into a Harbor task (via farm_hand)
     3. Tracking state for resumability (via StreamState)
     4. Periodic cleanup and progress reporting
-    
+
     Attributes:
         repo: Repository in "owner/repo" format
         config: FarmConfig with all settings
@@ -55,10 +53,10 @@ class StreamFarmer:
     """
 
     def __init__(
-            self,
-            repo: str,
-            config: FarmConfig,
-            console: Console,
+        self,
+        repo: str,
+        config: FarmConfig,
+        console: Console,
     ):
         self.repo = repo
         self.config = config
@@ -100,7 +98,7 @@ class StreamFarmer:
         )
 
         # Results tracking
-        self.results: List[TaskResult] = []
+        self.results: list[TaskResult] = []
 
         # Graceful shutdown handling
         self.shutdown_requested = False
@@ -109,7 +107,7 @@ class StreamFarmer:
 
     def _determine_resume_time(self) -> str | None:
         """Determine the resume time based on config and state.
-        
+
         Returns:
             ISO timestamp string to resume from, or None to start fresh
         """
@@ -118,13 +116,12 @@ class StreamFarmer:
             resume_input = self.config.resume_from.strip()
             try:
                 # Try to parse as date only (YYYY-MM-DD)
-                if len(resume_input) == 10 and resume_input.count('-') == 2:
+                if len(resume_input) == 10 and resume_input.count("-") == 2:
                     # Date only - convert to end of day (23:59:59) since we're working backwards
-                    resume_date = datetime.strptime(resume_input, '%Y-%m-%d')
+                    resume_date = datetime.strptime(resume_input, "%Y-%m-%d")
                     # Set to end of day in UTC
                     resume_dt = resume_date.replace(
-                        hour=23, minute=59, second=59, microsecond=999999,
-                        tzinfo=timezone.utc
+                        hour=23, minute=59, second=59, microsecond=999999, tzinfo=UTC
                     )
                     self.console.print(
                         f"[yellow]Resuming from end of {resume_input} "
@@ -133,18 +130,14 @@ class StreamFarmer:
                     return resume_dt.isoformat()
                 else:
                     # Full timestamp - validate it parses
-                    datetime.fromisoformat(resume_input.replace('Z', '+00:00'))
+                    datetime.fromisoformat(resume_input.replace("Z", "+00:00"))
                     return resume_input
             except ValueError as e:
                 self.console.print(
                     f"[red]Error: Invalid --resume-from format: {resume_input}[/red]"
                 )
-                self.console.print(
-                    "[yellow]Expected date like: 2024-01-15[/yellow]"
-                )
-                self.console.print(
-                    "[yellow]Or full timestamp like: 2024-01-15T10:30:00Z[/yellow]"
-                )
+                self.console.print("[yellow]Expected date like: 2024-01-15[/yellow]")
+                self.console.print("[yellow]Or full timestamp like: 2024-01-15T10:30:00Z[/yellow]")
                 raise ValueError(f"Invalid timestamp format: {e}") from e
         elif not self.config.reset and self.state.last_created_at:
             # Resume from last processed PR's creation time
@@ -152,7 +145,7 @@ class StreamFarmer:
                 f"[yellow]Resuming from last processed PR (created at {self.state.last_created_at})[/yellow]"
             )
             return self.state.last_created_at
-        
+
         return None
 
     def _handle_shutdown(self, signum, frame):
@@ -162,7 +155,7 @@ class StreamFarmer:
 
     def run(self) -> int:
         """Run the continuous farming process.
-        
+
         Returns:
             Exit code: 0 if any tasks succeeded, 1 otherwise
         """
@@ -187,14 +180,15 @@ class StreamFarmer:
         self.console.print("[green]Only PRs that modify tests will be considered.[/green]")
 
         if self.config.issue_only:
-            self.console.print("[magenta]ISSUE-ONLY MODE - only PRs with linked issues will be processed[/magenta]")
+            self.console.print(
+                "[magenta]ISSUE-ONLY MODE - only PRs with linked issues will be processed[/magenta]"
+            )
 
         if self.config.dry_run:
             self.console.print("[cyan]DRY RUN MODE - no tasks will be generated[/cyan]")
 
         self.console.print(
-            f"[dim]Timeout: {self.config.timeout}s | "
-            f"State: {self.state_file}[/dim]\n"
+            f"[dim]Timeout: {self.config.timeout}s | " f"State: {self.state_file}[/dim]\n"
         )
 
     def _run_stream(self) -> None:
@@ -210,12 +204,12 @@ class StreamFarmer:
 
     def _process_pr(self, pr: PRCandidate) -> None:
         """Process a single PR candidate.
-        
+
         Args:
             pr: The PR candidate to process
         """
         # Print PR header
-        merged_dt = datetime.fromisoformat(pr.merged_at.replace('Z', '+00:00'))
+        merged_dt = datetime.fromisoformat(pr.merged_at.replace("Z", "+00:00"))
         self.console.print(
             f"\n[bold cyan]═══ PR #{pr.number} ({self.state.total_processed + 1}) ═══[/bold cyan]"
         )
@@ -253,7 +247,7 @@ class StreamFarmer:
 
     def _print_result(self, result: TaskResult) -> None:
         """Print the result of processing a PR.
-        
+
         Args:
             result: The TaskResult to display
         """
@@ -268,7 +262,7 @@ class StreamFarmer:
         """Print progress summary."""
         last_info = f"#{self.state.last_pr_number or 'N/A'}"
         if self.state.last_created_at:
-            created_dt = datetime.fromisoformat(self.state.last_created_at.replace('Z', '+00:00'))
+            created_dt = datetime.fromisoformat(self.state.last_created_at.replace("Z", "+00:00"))
             last_info = f"#{self.state.last_pr_number} (created {created_dt.strftime('%Y-%m-%d')})"
 
         self.console.print(
@@ -310,8 +304,14 @@ class StreamFarmer:
                 stdout = result.stdout.strip()
                 if stdout:
                     # Show summary if available
-                    lines = stdout.split('\n')
-                    summary_lines = [l for l in lines if 'reclaimed' in l.lower() or 'deleted' in l.lower() or 'total' in l.lower()]
+                    lines = stdout.split("\n")
+                    summary_lines = [
+                        line
+                        for line in lines
+                        if "reclaimed" in line.lower()
+                        or "deleted" in line.lower()
+                        or "total" in line.lower()
+                    ]
                     if summary_lines:
                         self.console.print(f"[dim]{summary_lines[0]}[/dim]")
                 self.console.print("[green]Docker cleanup completed[/green]")
@@ -374,7 +374,7 @@ class StreamFarmer:
 
     def _get_log_path(self) -> Path:
         """Get the log file path.
-        
+
         Returns:
             Path to the log file for this session
         """

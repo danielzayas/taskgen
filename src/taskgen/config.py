@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from harbor.models.environment_type import EnvironmentType
 
@@ -10,11 +10,11 @@ from harbor.models.environment_type import EnvironmentType
 @dataclass(frozen=True)
 class CreateConfig:
     """Configuration for the create command (PR → Harbor task).
-    
+
     The create command uses a universal language-agnostic pipeline that works
     for any repository. Claude Code analyzes the repo to detect language, runtime,
     build system, and test framework automatically.
-    
+
     Attributes:
         repo: GitHub repository in "owner/repo" format or full URL
         pr: Pull request number
@@ -33,6 +33,7 @@ class CreateConfig:
         verbose: Increase output verbosity
         quiet: Reduce output verbosity
     """
+
     repo: str
     pr: int
     output: Path = field(default_factory=lambda: Path("tasks"))
@@ -60,11 +61,11 @@ class CreateConfig:
 @dataclass(frozen=True)
 class FarmConfig:
     """Configuration for the farm command (continuous PR processing).
-    
+
     The farm command uses a universal language-agnostic pipeline that works
     for any repository. Claude Code analyzes the repo to detect language, runtime,
     build system, and test framework automatically.
-    
+
     Attributes:
         repo: GitHub repository in "owner/repo" format
         output: Output directory for generated tasks (default: tasks/)
@@ -89,6 +90,7 @@ class FarmConfig:
         validate: Run Harbor validation after CC (useful when CC times out but task may be valid)
         network_isolated: Also run network-isolated validation
     """
+
     repo: str
     output: Path = field(default_factory=lambda: Path("tasks"))
     state_dir: Path = field(default_factory=lambda: Path(".state"))
@@ -98,10 +100,10 @@ class FarmConfig:
     api_delay: float = 0.5
     task_delay: int = 60
     reset: bool = False
-    resume_from: Optional[str] = None
+    resume_from: str | None = None
     dry_run: bool = False
     docker_prune_batch: int = 5
-    skip_list: Optional[str] = None
+    skip_list: str | None = None
     no_cache: bool = False
     require_minimum_difficulty: bool = True
     min_source_files: int = 3
@@ -116,7 +118,7 @@ class FarmConfig:
 @dataclass(frozen=True)
 class ValidateConfig:
     """Configuration for the validate command.
-    
+
     Attributes:
         path: Path to Harbor dataset root or specific task directory
         task: Task ID when path points to dataset root
@@ -130,11 +132,12 @@ class ValidateConfig:
         max_parallel: Maximum number of parallel validations (batch mode)
         show_passed: Show passed tasks in output (batch mode)
     """
+
     path: Path
-    task: Optional[str] = None
+    task: str | None = None
     agent: Literal["both", "nop", "oracle"] = "both"
     jobs_dir: Path = field(default_factory=lambda: Path(".state/harbor-jobs"))
-    timeout_multiplier: Optional[float] = None
+    timeout_multiplier: float | None = None
     network_isolated: bool = False
     environment: EnvironmentType = EnvironmentType.DOCKER
     verbose: bool = False
@@ -146,7 +149,7 @@ class ValidateConfig:
 @dataclass(frozen=True)
 class CleanConfig:
     """Configuration for the clean command.
-    
+
     Attributes:
         state_dir: State directory to clean
         output_root: Tasks output root
@@ -156,6 +159,7 @@ class CleanConfig:
         tasks: Remove tasks/
         dry_run: Print what would be removed without deleting
     """
+
     state_dir: Path = field(default_factory=lambda: Path(".state"))
     output_root: Path = field(default_factory=lambda: Path("tasks"))
     all_: bool = False
@@ -163,4 +167,3 @@ class CleanConfig:
     cache: bool = False
     tasks: bool = False
     dry_run: bool = False
-

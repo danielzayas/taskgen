@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Set
+from typing import Any
 
 import requests
 from rich.console import Console
@@ -15,19 +16,19 @@ from .farm_hand import PRCandidate, _slug
 from .state import StreamState
 
 
-def load_skip_list(skip_list_file: Path, repo: str) -> Set[int]:
+def load_skip_list(skip_list_file: Path, repo: str) -> set[int]:
     """Load PR numbers from a skip list file for the given repository.
-    
+
     The file should contain task IDs like (SWEBench format):
         owner__repo-123
         owner__repo-456
-    
+
     This function extracts PR numbers matching the current repo.
-    
+
     Args:
         skip_list_file: Path to the skip list file
         repo: Repository in owner/repo format (e.g., "python/pillow")
-    
+
     Returns:
         Set of PR numbers to skip
     """
@@ -38,18 +39,18 @@ def load_skip_list(skip_list_file: Path, repo: str) -> Set[int]:
     repo_slug = _slug(repo)
     prefix = f"{repo_slug}-"
 
-    skip_prs: Set[int] = set()
+    skip_prs: set[int] = set()
     try:
         content = skip_list_file.read_text()
-        for line in content.strip().split('\n'):
+        for line in content.strip().split("\n"):
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
 
             # Check if this task ID matches our repo
             if line.startswith(prefix):
                 # Extract PR number from task ID (e.g., "python__pillow-9272" -> 9272)
-                pr_part = line[len(prefix):]
+                pr_part = line[len(prefix) :]
                 try:
                     pr_number = int(pr_part)
                     skip_prs.add(pr_number)
@@ -65,10 +66,10 @@ def load_skip_list(skip_list_file: Path, repo: str) -> Set[int]:
 
 class StreamingPRFetcher:
     """Fetches PRs from GitHub in a streaming fashion.
-    
+
     Yields PRs one at a time after filtering. Handles pagination,
     rate limiting, and various filters (merged, has tests).
-    
+
     Attributes:
         repo: Repository in "owner/repo" format
         console: Rich console for output
@@ -97,9 +98,7 @@ class StreamingPRFetcher:
         # GitHub API setup
         self.api_base = "https://api.github.com"
         self.github_token = (
-            os.getenv("GITHUB_TOKEN")
-            or os.getenv("GH_TOKEN")
-            or os.getenv("REPO_CREATION_TOKEN")
+            os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or os.getenv("REPO_CREATION_TOKEN")
         )
         self.headers = {
             "Accept": "application/vnd.github+json",
@@ -110,20 +109,20 @@ class StreamingPRFetcher:
 
     def stream_prs(
         self,
-        resume_from_time: Optional[str] = None,
+        resume_from_time: str | None = None,
     ) -> Iterator[PRCandidate]:
         """Stream PRs from GitHub API, skipping already processed ones.
-        
+
         Yields PRs one at a time after validation. Fetches in pages
         but yields immediately, allowing processing to happen concurrently.
-        
+
         Works backwards in time from present day (or resume point) by PR creation time.
-        
+
         Args:
             resume_from_time: If specified, only process PRs created before this timestamp.
                              Format: ISO 8601 string (e.g., "2024-01-15T23:59:59.999999+00:00")
                              This allows resuming from a specific time and continuing backwards.
-                             
+
         Yields:
             PRCandidate instances for each PR that passes filters
         """
@@ -141,7 +140,7 @@ class StreamingPRFetcher:
 
         self.console.print(f"[dim]Streaming PRs from {self.repo}...[/dim]")
         if resume_from_time is not None:
-            resume_dt = datetime.fromisoformat(resume_from_time.replace('Z', '+00:00'))
+            resume_dt = datetime.fromisoformat(resume_from_time.replace("Z", "+00:00"))
             self.console.print(
                 f"[yellow]Resuming from {resume_dt.strftime('%Y-%m-%d %H:%M:%S UTC')} "
                 f"(only processing PRs created before this time)[/yellow]"
@@ -152,7 +151,7 @@ class StreamingPRFetcher:
                 f"({self.state.successful} successful, {self.state.failed} failed)[/yellow]"
             )
             if self.state.last_created_at:
-                last_dt = datetime.fromisoformat(self.state.last_created_at.replace('Z', '+00:00'))
+                last_dt = datetime.fromisoformat(self.state.last_created_at.replace("Z", "+00:00"))
                 self.console.print(
                     f"[yellow]Last processed PR created at: {last_dt.strftime('%Y-%m-%d %H:%M:%S UTC')}[/yellow]"
                 )
@@ -170,7 +169,7 @@ class StreamingPRFetcher:
         while True:
             # Fetch next page
             url = f"{self.api_base}/repos/{self.repo}/pulls"
-            params = {**params_base, "page": page}
+            params: dict[str, Any] = {**params_base, "page": page}
 
             try:
                 resp = requests.get(url, headers=self.headers, params=params, timeout=30)
@@ -211,8 +210,8 @@ class StreamingPRFetcher:
                 # Skip if this PR was created after our resume time
                 # (we're working backwards, so we only want PRs created before the resume point)
                 if resume_from_time is not None and created_at:
-                    pr_created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                    resume_dt = datetime.fromisoformat(resume_from_time.replace('Z', '+00:00'))
+                    pr_created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    resume_dt = datetime.fromisoformat(resume_from_time.replace("Z", "+00:00"))
                     if pr_created_dt >= resume_dt:
                         skipped_stats["after_resume_time"] += 1
                         continue
@@ -295,10 +294,10 @@ class StreamingPRFetcher:
 
     def _pr_has_test_changes(self, pr_number: int) -> bool:
         """Check if PR modifies test files.
-        
+
         Args:
             pr_number: PR number to check
-            
+
         Returns:
             True if PR has test file changes
         """
@@ -328,7 +327,7 @@ class StreamingPRFetcher:
 
     def _print_stats(self, skipped: dict) -> None:
         """Print skipping statistics.
-        
+
         Args:
             skipped: Dict of skip reasons to counts
         """
@@ -340,4 +339,3 @@ class StreamingPRFetcher:
         for reason, count in skipped.items():
             if count > 0:
                 self.console.print(f"  [dim]• {reason}: {count}[/dim]")
-

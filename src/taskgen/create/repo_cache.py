@@ -3,13 +3,12 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 
 class RepoCache:
     """Manages local clones of repositories for CC analysis."""
 
-    def __init__(self, cache_dir: Optional[Path] = None):
+    def __init__(self, cache_dir: Path | None = None):
         """
         Initialize the repo cache.
 
@@ -24,7 +23,7 @@ class RepoCache:
         self,
         repo: str,
         head_sha: str,
-        repo_url: Optional[str] = None,
+        repo_url: str | None = None,
     ) -> Path:
         """
         Get cached repo or clone it. Checkout the specified commit.
@@ -123,7 +122,7 @@ class RepoCache:
         try:
             # First, thoroughly clean the repo
             self._clean_repo(repo_path)
-            
+
             # Try direct checkout
             subprocess.run(
                 ["git", "checkout", sha],
@@ -134,7 +133,11 @@ class RepoCache:
             self.logger.debug("Checked out %s", sha[:8])
         except subprocess.CalledProcessError as e:
             # Commit not available, fetch it specifically
-            self.logger.debug("Commit %s not found, fetching... (stderr: %s)", sha[:8], e.stderr.decode() if e.stderr else "")
+            self.logger.debug(
+                "Commit %s not found, fetching... (stderr: %s)",
+                sha[:8],
+                e.stderr.decode() if e.stderr else "",
+            )
             try:
                 subprocess.run(
                     ["git", "fetch", "origin", sha],
@@ -155,7 +158,9 @@ class RepoCache:
                 # Provide more context in the error
                 stderr = fetch_err.stderr.decode() if fetch_err.stderr else ""
                 self.logger.error("Failed to checkout %s: %s", sha[:8], stderr)
-                raise RuntimeError(f"Cannot checkout commit {sha[:8]}. It may have been force-pushed or deleted. Error: {stderr}") from fetch_err
+                raise RuntimeError(
+                    f"Cannot checkout commit {sha[:8]}. It may have been force-pushed or deleted. Error: {stderr}"
+                ) from fetch_err
 
         # Update submodules if any
         try:
@@ -168,4 +173,3 @@ class RepoCache:
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             self.logger.debug("Submodule update skipped or failed (non-fatal)")
-

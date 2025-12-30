@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional, Set
 
 
 @dataclass
 class StreamState:
     """State for resumable streaming PR processing.
-    
+
     Tracks which PRs have been processed, success/failure counts,
     and the last processed PR for resume capability.
-    
+
     Attributes:
         repo: Repository name in "owner/repo" format
         processed_prs: Set of PR numbers that have been processed
@@ -26,16 +25,17 @@ class StreamState:
         last_updated: ISO timestamp of last state update
         skip_list_prs: Set of PR numbers to skip (from external skip list)
     """
+
     repo: str
-    processed_prs: Set[int] = None
+    processed_prs: set[int] = None
     total_fetched: int = 0
     total_processed: int = 0
     successful: int = 0
     failed: int = 0
-    last_pr_number: Optional[int] = None
-    last_created_at: Optional[str] = None
-    last_updated: Optional[str] = None
-    skip_list_prs: Set[int] = None
+    last_pr_number: int | None = None
+    last_created_at: str | None = None
+    last_updated: str | None = None
+    skip_list_prs: set[int] = None
 
     def __post_init__(self):
         if self.processed_prs is None:
@@ -45,7 +45,7 @@ class StreamState:
 
     def mark_processed(self, pr_number: int, created_at: str, success: bool) -> None:
         """Mark a PR as processed and update counters.
-        
+
         Args:
             pr_number: The PR number that was processed
             created_at: ISO timestamp of when the PR was created
@@ -59,7 +59,7 @@ class StreamState:
             self.failed += 1
         self.last_pr_number = pr_number
         self.last_created_at = created_at
-        self.last_updated = datetime.now(timezone.utc).isoformat()
+        self.last_updated = datetime.now(UTC).isoformat()
 
     def to_dict(self) -> dict:
         """Convert to dict for JSON serialization."""
@@ -78,10 +78,10 @@ class StreamState:
     @classmethod
     def from_dict(cls, data: dict) -> StreamState:
         """Load state from a dict.
-        
+
         Args:
             data: Dict previously created by to_dict()
-            
+
         Returns:
             StreamState instance
         """
@@ -99,7 +99,7 @@ class StreamState:
 
     def save(self, state_file: Path) -> None:
         """Save state to a JSON file.
-        
+
         Args:
             state_file: Path to save state to
         """
@@ -109,11 +109,11 @@ class StreamState:
     @classmethod
     def load(cls, state_file: Path, repo: str) -> StreamState:
         """Load state from file, or create new if not exists.
-        
+
         Args:
             state_file: Path to state file
             repo: Repository name (used to verify state matches)
-            
+
         Returns:
             StreamState instance (loaded or new)
         """
@@ -125,4 +125,3 @@ class StreamState:
             except Exception:
                 pass
         return cls(repo=repo)
-

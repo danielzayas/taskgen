@@ -1,19 +1,20 @@
+from __future__ import annotations
+
 import logging
 import os
-from typing import Dict, List, Optional
+import re
 from urllib.parse import urlparse
 
 import requests
-import re
 
 
 class GitHubPRFetcher:
     """Fetches PR metadata from GitHub API."""
 
-    def __init__(self, repo: str, pr_number: int, github_token: Optional[str] = None):
+    def __init__(self, repo: str, pr_number: int, github_token: str | None = None):
         """
         Initialize the PR fetcher.
-        
+
         Args:
             repo: GitHub repo in format "owner/repo" or full URL
             pr_number: PR number
@@ -25,9 +26,7 @@ class GitHubPRFetcher:
 
         # API setup
         self.api_base = "https://api.github.com"
-        self.headers = {
-            "Accept": "application/vnd.github.v3+json"
-        }
+        self.headers = {"Accept": "application/vnd.github.v3+json"}
         if self.github_token:
             self.headers["Authorization"] = f"token {self.github_token}"
 
@@ -42,14 +41,14 @@ class GitHubPRFetcher:
             return path
         return repo
 
-    def _api_get(self, endpoint: str) -> Dict:
+    def _api_get(self, endpoint: str) -> dict:
         """Make a GET request to GitHub API."""
         url = f"{self.api_base}{endpoint}"
         response = requests.get(url, headers=self.headers)
         response.raise_for_status()
         return response.json()
 
-    def fetch_pr_metadata(self) -> Dict:
+    def fetch_pr_metadata(self) -> dict:
         """Fetch PR metadata from GitHub API."""
         logger = logging.getLogger("taskgen")
         logger.debug("Fetching PR #%s metadata from %s...", self.pr_number, self.repo)
@@ -80,44 +79,48 @@ class GitHubPRFetcher:
             "merged_at": pr_data["merged_at"],
         }
 
-    def fetch_pr_files(self) -> List[Dict]:
+    def fetch_pr_files(self) -> list[dict]:
         """Fetch list of files changed in the PR."""
         logger = logging.getLogger("taskgen")
         logger.debug("Fetching changed files for PR #%s...", self.pr_number)
-        files = self._api_get(f"/repos/{self.repo}/pulls/{self.pr_number}/files")
+        files_response = self._api_get(f"/repos/{self.repo}/pulls/{self.pr_number}/files")
+        # API may return dict with pagination info or list directly
+        files = (
+            files_response if isinstance(files_response, list) else files_response.get("files", [])
+        )
         logger.debug("Found %d changed files", len(files))
         for f in files:
-            logger.debug("  %s %s", f['status'], f['filename'])
+            logger.debug("  %s %s", f["status"], f["filename"])
 
         return files
 
-    def fetch_linked_issues(self) -> List[Dict]:
+    def fetch_linked_issues(self) -> list[dict]:
         """Fetch issues linked/referenced in the PR.
-        
+
         Uses the BROADEST approach possible:
         1. GitHub Timeline API (catches manual links and cross-references)
         2. PR title parsing
         3. PR body parsing
-        
+
         Returns a list of issue dictionaries with 'number', 'title', and 'body'.
         """
         logger = logging.getLogger("taskgen")
         logger.debug("Fetching linked issues for PR #%s...", self.pr_number)
-        
+
         issues = []
         issue_numbers = set()
-        
+
         try:
             # Method 1: Use timeline API to find closing references and manual links
             timeline_url = f"/repos/{self.repo}/issues/{self.pr_number}/timeline"
             headers = self.headers.copy()
             headers["Accept"] = "application/vnd.github.mockingbird-preview+json"
-            
+
             url = f"{self.api_base}{timeline_url}"
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             timeline = response.json()
-            
+
             for event in timeline:
                 if event.get("event") == "cross-referenced":
                     source = event.get("source", {})
@@ -128,28 +131,28 @@ class GitHubPRFetcher:
                             issue_numbers.add(issue_num)
         except Exception as e:
             logger.debug("Timeline API failed (may not have access): %s", str(e))
-        
+
         try:
             # Method 2: Parse PR title and body for issue references
             pr_data = self._api_get(f"/repos/{self.repo}/pulls/{self.pr_number}")
             pr_title = pr_data.get("title", "") or ""
             pr_body = pr_data.get("body", "") or ""
-            
+
             # Combine title and body
             text = f"{pr_title}\n{pr_body}"
-            
+
             # Remove HTML comments before parsing (like SWE-smith does)
-            comments_pat = re.compile(r'(?s)<!--.*?-->')
+            comments_pat = re.compile(r"(?s)<!--.*?-->")
             text = comments_pat.sub("", text)
-            
+
             # Match patterns - BROADEST approach (keywords optional, standalone #123 also matches)
             patterns = [
-                r'(?:fix(?:es|ed)?|close(?:s|d)?|resolve(?:s|d)?)\s+#(\d+)',  # With keywords
-                r'(?:fix(?:es|ed)?|close(?:s|d)?|resolve(?:s|d)?)\s+https?://github\.com/[^/]+/[^/]+/issues/(\d+)',  # Full URLs with keywords
-                r'#(\d+)',  # Standalone #123 (no keyword required - broadest)
-                r'https?://github\.com/[^/]+/[^/]+/issues/(\d+)',  # Full URLs without keywords
+                r"(?:fix(?:es|ed)?|close(?:s|d)?|resolve(?:s|d)?)\s+#(\d+)",  # With keywords
+                r"(?:fix(?:es|ed)?|close(?:s|d)?|resolve(?:s|d)?)\s+https?://github\.com/[^/]+/[^/]+/issues/(\d+)",  # Full URLs with keywords
+                r"#(\d+)",  # Standalone #123 (no keyword required - broadest)
+                r"https?://github\.com/[^/]+/[^/]+/issues/(\d+)",  # Full URLs without keywords
             ]
-            
+
             for pattern in patterns:
                 matches = re.finditer(pattern, text, re.IGNORECASE)
                 for match in matches:
@@ -158,21 +161,23 @@ class GitHubPRFetcher:
                         issue_numbers.add(issue_num)
         except Exception as e:
             logger.debug("Failed to parse PR title/body for issue refs: %s", str(e))
-        
+
         # Fetch full issue data for each linked issue
         for issue_num in sorted(issue_numbers):
             try:
                 issue_data = self._api_get(f"/repos/{self.repo}/issues/{issue_num}")
-                issues.append({
-                    "number": issue_data["number"],
-                    "title": issue_data["title"],
-                    "body": issue_data.get("body", ""),
-                    "state": issue_data.get("state", ""),
-                    "html_url": issue_data.get("html_url", ""),
-                })
+                issues.append(
+                    {
+                        "number": issue_data["number"],
+                        "title": issue_data["title"],
+                        "body": issue_data.get("body", ""),
+                        "state": issue_data.get("state", ""),
+                        "html_url": issue_data.get("html_url", ""),
+                    }
+                )
                 logger.debug("  Found linked issue #%d: %s", issue_num, issue_data["title"])
             except Exception as e:
                 logger.debug("  Failed to fetch issue #%d: %s", issue_num, str(e))
-        
+
         logger.debug("Collected %d linked issues", len(issues))
         return issues

@@ -24,7 +24,7 @@ index e3a50f3d..6130b1f5 100644
 @@ -1194,10 +1196,7 @@ export const ZodObject: core.$constructor<ZodObject> = /*@__PURE__*/ core.$const
    core.$ZodObjectJIT.init(inst, def);
    ZodType.init(inst, def);
- 
+
 -  util.defineLazy(inst, "shape", () => {
 -    return def.shape;
 -  });
@@ -125,7 +125,7 @@ index 55cbfc50..98aa588b 100644
 --- a/packages/zod/src/v4/core/schemas.ts
 +++ b/packages/zod/src/v4/core/schemas.ts
 @@ -1739,7 +1739,7 @@ export interface $ZodObjectDef<Shape extends $ZodShape = $ZodShape> extends $Zod
- 
+
  export interface $ZodObjectInternals<
    /** @ts-ignore Cast variance */
 -  out Shape extends $ZodShape = $ZodShape,
@@ -152,9 +152,9 @@ index 55cbfc50..98aa588b 100644
 -      },
 -    });
 -  }
- 
+
    const _normalized = util.cached(() => normalizeDef(def));
- 
+
 @@ -1868,6 +1853,7 @@ export const $ZodObject: core.$constructor<$ZodObject> = /*@__PURE__*/ core.$con
        payload.issues.push({
          expected: "object",
@@ -215,10 +215,10 @@ index 25ffd69f..17d4f70e 100644
 @@ -1,52 +1,5 @@
 -import * as z from "zod";
 +const test = () => 1;
- 
+
 -z;
 +test.something = () => 2;
- 
+
 -// export const LinesSchema = <T extends z.ZodType<unknown, any>>(schema: T) =>
 -//   z
 -//     .string()

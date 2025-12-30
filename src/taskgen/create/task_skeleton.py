@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
 
 from harbor.models.task.config import (
-    TaskConfig,
-    VerifierConfig,
     AgentConfig,
     EnvironmentConfig,
+    TaskConfig,
+    VerifierConfig,
 )
 
 from .utils import strip_tests_prefix
@@ -17,6 +16,7 @@ from .utils import strip_tests_prefix
 @dataclass
 class UniversalSkeletonParams:
     """Parameters for skeleton generation (all deterministic from git)."""
+
     repo_url: str
     head_sha: str
     base_sha: str
@@ -37,7 +37,7 @@ def generate_universal_dockerfile(params: UniversalSkeletonParams) -> str:
     - Build steps (if needed)
     - Post-patch rebuild (if needed)
     """
-    return f'''FROM ubuntu:24.04
+    return f"""FROM ubuntu:24.04
 
 # Base system packages (common to all languages)
 RUN apt-get update && apt-get install -y \\
@@ -112,11 +112,11 @@ RUN patch -p1 < /tmp/bug.patch && rm /tmp/bug.patch
 RUN rm -rf /app/src/.git
 
 WORKDIR /app/src
-'''
+"""
 
 
 def generate_universal_test_sh(
-    test_files: List[str],
+    test_files: list[str],
 ) -> str:
     """
     Generate a minimal, language-agnostic test.sh skeleton.
@@ -143,12 +143,12 @@ def generate_universal_test_sh(
         # Build example test file list for comments
         test_files_example = " ".join([f'"{tf}"' for tf in test_files[:5]])
         if len(test_files) > 5:
-            test_files_example += f' # ... and {len(test_files) - 5} more'
+            test_files_example += f" # ... and {len(test_files) - 5} more"
     else:
         copy_commands = "# No test files to copy"
         test_files_example = ""
 
-    return f'''#!/bin/bash
+    return f"""#!/bin/bash
 
 cd /app/src
 
@@ -214,7 +214,7 @@ else
   echo 0 > /logs/verifier/reward.txt
 fi
 exit "$test_status"
-'''
+"""
 
 
 def generate_universal_solve_sh() -> str:
@@ -228,14 +228,14 @@ patch -p1 < /solution/fix.patch
 """
 
 
-def generate_instruction_md(instruction_data: Dict) -> str:
+def generate_instruction_md(instruction_data: dict) -> str:
     """Generate instruction.md file for Harbor format."""
     return instruction_data["instruction"]
 
 
-def generate_task_toml(instruction_data: Dict) -> str:
+def generate_task_toml(instruction_data: dict) -> str:
     """Generate task.toml config file for Harbor format.
-    
+
     Uses Harbor's TaskConfig for proper serialization and validation.
     """
     config = TaskConfig(
@@ -254,4 +254,3 @@ def generate_task_toml(instruction_data: Dict) -> str:
         ),
     )
     return config.model_dump_toml()
-

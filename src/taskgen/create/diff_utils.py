@@ -3,16 +3,15 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
-from typing import List
 
-from .utils import strip_tests_prefix, _is_relevant_source
+from .utils import _is_relevant_source, strip_tests_prefix
 
 
 def generate_diffs(
     repo_path: Path,
     base_sha: str,
     head_sha: str,
-    test_file_paths: List[str],
+    test_file_paths: list[str],
 ) -> tuple[str, str]:
     """
     Generate fix.patch and bug.patch from a repository.
@@ -82,10 +81,10 @@ def generate_diffs(
 
 def extract_test_files(
     repo_path: Path,
-    test_file_paths: List[str],
+    test_file_paths: list[str],
     head_sha: str,
     output_dir: Path,
-) -> List[str]:
+) -> list[str]:
     """
     Extract test files from HEAD commit to task/tests/ directory.
 
@@ -141,4 +140,3 @@ def extract_test_files(
 
     logger.debug("Extracted %d/%d test files to %s", len(extracted), len(test_file_paths), test_dir)
     return extracted
-
