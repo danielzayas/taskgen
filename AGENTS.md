@@ -102,7 +102,7 @@ Remove local artifacts (.state, logs, jobs).
 src/taskgen/
 ├── cli.py                  # Typer CLI entry point
 ├── config.py               # Configuration dataclasses
-├── reversal/               # Core task generation logic
+├── create/                 # Core task generation logic
 │   ├── orchestrator.py     # PRToHarborPipeline - main orchestrator
 │   ├── reversal.py         # run_reversal() - CLI command implementation
 │   ├── pr_fetcher.py       # GitHub API interactions

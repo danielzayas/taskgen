@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from venv import create
 
 from rich.console import Console
 from rich.panel import Panel
@@ -181,7 +182,7 @@ def _run_reversal_for_pr_impl(
         )
 
     # Build CreateConfig for run_reversal (universal pipeline)
-    reversal_config = CreateConfig(
+    create_config = CreateConfig(
         repo=config.repo,
         pr=pr.number,
         output=config.output,
@@ -208,7 +209,7 @@ def _run_reversal_for_pr_impl(
     
     try:
         # Call the pipeline directly instead of using subprocess
-        run_reversal(reversal_config)
+        run_reversal(create_config)
         success = True
     except TrivialPRError as e:
         # Trivial PR - not an error, just skip it
