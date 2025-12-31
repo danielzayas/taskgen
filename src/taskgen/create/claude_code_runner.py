@@ -1,14 +1,23 @@
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import os
-import select
-import subprocess
-import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    HookMatcher,
+    ResultMessage,
+    SystemMessage,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
+    query,
+)
 
 from taskgen.tools.harbor_runner import parse_harbor_reward
 
@@ -713,68 +722,63 @@ class Colors:
     RESET = "\033[0m"
 
 
-def _print_stream_event(event: dict) -> None:
-    """Parse and print a stream-json event from Claude Code.
+def _print_sdk_message(message: object) -> None:
+    """Print SDK messages with colored formatting.
 
-    Event types include:
-    - assistant: Claude's text responses
-    - user: User messages (shouldn't appear in -p mode)
-    - tool_use: Tool invocations
-    - tool_result: Tool outputs
-    - result: Final result
-    - system: System messages
+    Message types include:
+    - AssistantMessage: Claude's text responses and tool uses
+    - UserMessage: User messages (for tool results in SDK)
+    - ResultMessage: Final result message
+    - SystemMessage: System notifications
     """
-    event_type = event.get("type", "")
-
-    if event_type == "assistant":
+    if isinstance(message, AssistantMessage):
         # Assistant message content
-        message = event.get("message", {})
-        content = message.get("content", [])
-        for block in content:
-            if isinstance(block, dict):
-                if block.get("type") == "text":
-                    text = block.get("text", "")
-                    if text.strip():
-                        print(f"\n{Colors.BLUE}[Assistant]{Colors.RESET} {text}", flush=True)
-                elif block.get("type") == "tool_use":
-                    tool_name = block.get("name", "unknown").upper()
-                    tool_input = block.get("input", {})
-                    # Much less aggressive truncation - commands are important!
-                    summary: dict | str
-                    if isinstance(tool_input, dict):
-                        # For bash commands, show up to 2000 chars; for other inputs, 1000 chars
-                        max_len = 2000 if tool_name.lower() == "bash" else 1000
-                        summary = {
-                            k: (
-                                v[:max_len] + "..."
-                                if isinstance(v, str) and len(v) > max_len
-                                else v
-                            )
-                            for k, v in tool_input.items()
-                        }
-                    else:
-                        summary = str(tool_input)[:2000]
-                    print(
-                        f"\n{Colors.CYAN}{Colors.BOLD}{tool_name}{Colors.RESET}: {summary}",
-                        flush=True,
-                    )
-            elif isinstance(block, str) and block.strip():
-                print(f"\n{Colors.BLUE}[Assistant]{Colors.RESET} {block}", flush=True)
+        for block in message.content:
+            if isinstance(block, TextBlock):
+                text = block.text
+                if text.strip():
+                    print(f"\n{Colors.BLUE}[Assistant]{Colors.RESET} {text}", flush=True)
+            elif isinstance(block, ToolUseBlock):
+                tool_name = block.name.upper()
+                tool_input = block.input
+                # Less aggressive truncation - commands are important!
+                summary: dict | str
+                if isinstance(tool_input, dict):
+                    # For bash commands, show up to 2000 chars; for other inputs, 1000 chars
+                    max_len = 2000 if tool_name.lower() == "bash" else 1000
+                    summary = {
+                        k: (
+                            v[:max_len] + "..."
+                            if isinstance(v, str) and len(v) > max_len
+                            else v
+                        )
+                        for k, v in tool_input.items()
+                    }
+                else:
+                    summary = str(tool_input)[:2000]
+                print(
+                    f"\n{Colors.CYAN}{Colors.BOLD}{tool_name}{Colors.RESET}: {summary}",
+                    flush=True,
+                )
 
-    elif event_type == "tool_result":
-        # Tool execution result
-        tool_name = event.get("tool_name", "unknown")
-        content = event.get("content", "")
-        # Less aggressive truncation - show up to 2000 chars
-        if isinstance(content, str) and len(content) > 2000:
-            content = content[:2000] + f"... ({len(content)} chars total)"
-        print(f"{Colors.MAGENTA}[Tool Result]{Colors.RESET} {tool_name}: {content}", flush=True)
+    elif isinstance(message, UserMessage):
+        # In SDK mode, tool results come as UserMessage with ToolResultBlock
+        for block in message.content:
+            if isinstance(block, ToolResultBlock):
+                content = block.content if hasattr(block, "content") else str(block)
+                # Less aggressive truncation - show up to 2000 chars
+                if isinstance(content, str) and len(content) > 2000:
+                    content = content[:2000] + f"... ({len(content)} chars total)"
+                print(f"{Colors.MAGENTA}[Tool Result]{Colors.RESET} {content}", flush=True)
+            elif isinstance(block, TextBlock):
+                text = block.text
+                if text.strip():
+                    print(f"{Colors.MAGENTA}[Tool Result]{Colors.RESET} {text}", flush=True)
 
-    elif event_type == "result":
-        # Final result - print summary
-        result_text = event.get("result", "")
-        if isinstance(result_text, str) and result_text.strip():
-            # Less aggressive truncation for final results
+    elif isinstance(message, ResultMessage):
+        # Final result message
+        result_text = getattr(message, "text", str(message))
+        if result_text and result_text.strip():
             if len(result_text) > 3000:
                 result_text = result_text[:3000] + f"... ({len(result_text)} chars total)"
             print(
@@ -782,22 +786,11 @@ def _print_stream_event(event: dict) -> None:
                 flush=True,
             )
 
-        # Print cost info if available
-        cost = event.get("total_cost_usd")
-        if cost:
-            print(f"{Colors.GREEN}[Cost]{Colors.RESET} ${cost:.4f}", flush=True)
-
-    elif event_type == "system":
+    elif isinstance(message, SystemMessage):
         # System messages
-        message = event.get("message", "")
-        if message:
-            print(f"{Colors.YELLOW}[System]{Colors.RESET} {message}", flush=True)
-
-    elif event_type == "error":
-        # Error messages
-        error = event.get("error", {})
-        message = error.get("message", str(error))
-        print(f"{Colors.RED}[Error]{Colors.RESET} {message}", flush=True)
+        msg_text = getattr(message, "text", str(message))
+        if msg_text:
+            print(f"{Colors.YELLOW}[System]{Colors.RESET} {msg_text}", flush=True)
 
 
 def run_make_it_work_session(
@@ -816,7 +809,7 @@ def run_make_it_work_session(
     environment: str = "docker",
 ) -> MakeItWorkResult:
     """
-    Run CC session to complete skeleton and make harbor pass.
+    Run Claude Code session to complete skeleton and make harbor pass.
 
     Args:
         repo: Repository in "owner/repo" format
@@ -826,8 +819,8 @@ def run_make_it_work_session(
         task_id: Task identifier
         dataset_path: Path to Harbor dataset root
         test_files: List of test file paths
-        timeout: Maximum time for CC session
-        verbose: If True, stream CC output to console
+        timeout: Maximum time for session
+        verbose: If True, stream output to console
         reference_task_id: If provided, task_id to copy Dockerfile/test.sh from
         reference_pr: If provided, PR number of the reference task
         head_sha: If provided, new HEAD SHA to use in Dockerfile
@@ -836,10 +829,46 @@ def run_make_it_work_session(
     Returns:
         MakeItWorkResult with success status
     """
-    logger = logging.getLogger("taskgen")
-    logger.info("Starting CC 'make it work' session for: %s", task_id)
+    # Run async session in sync context
+    return asyncio.run(
+        _run_make_it_work_session_async(
+            repo=repo,
+            pr_number=pr_number,
+            repo_path=repo_path,
+            task_dir=task_dir,
+            task_id=task_id,
+            dataset_path=dataset_path,
+            test_files=test_files,
+            timeout=timeout,
+            verbose=verbose,
+            reference_task_id=reference_task_id,
+            reference_pr=reference_pr,
+            head_sha=head_sha,
+            environment=environment,
+        )
+    )
 
-    # Resolve all paths to absolute paths for reliable CC usage
+
+async def _run_make_it_work_session_async(
+    repo: str,
+    pr_number: int,
+    repo_path: Path,
+    task_dir: Path,
+    task_id: str,
+    dataset_path: Path,
+    test_files: list[str],
+    timeout: int = 900,
+    verbose: bool = False,
+    reference_task_id: str | None = None,
+    reference_pr: int | None = None,
+    head_sha: str | None = None,
+    environment: str = "docker",
+) -> MakeItWorkResult:
+    """Async implementation of Claude Code session."""
+    logger = logging.getLogger("taskgen")
+    logger.info("Starting Claude Code session for: %s", task_id)
+
+    # Resolve all paths to absolute paths for reliable usage
     dataset_path = Path(dataset_path).resolve()
     task_dir = Path(task_dir).resolve()
     repo_path = Path(repo_path).resolve()
@@ -858,7 +887,7 @@ def run_make_it_work_session(
     # Choose prompt based on whether we're using a reference task
     if reference_task_id and reference_pr:
         reference_task_dir = (dataset_path / reference_task_id).resolve()
-        prompt = CC_REFERENCE_PROMPT.format(
+        prompt_text = CC_REFERENCE_PROMPT.format(
             repo=repo,
             pr_number=pr_number,
             reference_pr=reference_pr,
@@ -877,7 +906,7 @@ def run_make_it_work_session(
             f"Using reference prompt (copying from {reference_task_id}, PR #{reference_pr})"
         )
     else:
-        prompt = CC_MAKE_IT_WORK_PROMPT.format(
+        prompt_text = CC_MAKE_IT_WORK_PROMPT.format(
             repo=repo,
             pr_number=pr_number,
             repo_path=repo_path,
@@ -890,164 +919,83 @@ def run_make_it_work_session(
         )
         logger.info("Using full prompt (generating from skeleton)")
 
+    # Create hook for logging Harbor validation attempts
+    harbor_runs: list[str] = []
+
+    async def log_harbor_runs(input_data: dict, tool_use_id: str, context: dict) -> dict:
+        """Log Harbor validation attempts for debugging."""
+        command = input_data.get("tool_input", {}).get("command", "")
+        if "harbor run" in command:
+            harbor_runs.append(command)
+            if verbose:
+                print(f"{Colors.YELLOW}[Harbor]{Colors.RESET} {command}", flush=True)
+        return {}
+
     try:
-        logger.info("Invoking Claude Code with %ds timeout...", timeout)
-
-        # Quick test to verify Claude Code is accessible (only in verbose mode)
-        if verbose:
-            try:
-                test_result = subprocess.run(
-                    ["claude", "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if test_result.returncode == 0:
-                    print(f"[CC] Claude Code version: {test_result.stdout.strip()}", flush=True)
-                else:
-                    print("[CC] Warning: Claude Code version check failed", flush=True)
-            except Exception as e:
-                print(f"[CC] Warning: Could not verify Claude Code: {e}", flush=True)
-
-        # CC needs full tool access and should work from the repo directory
-        # for maximum context
-        cmd = [
-            "claude",
-            "-p",
-            prompt,
-            "--allowedTools",
-            "Read,Write,Edit,Glob,Grep,LS,Bash",
-        ]
+        logger.info("Invoking Claude Code SDK with %ds timeout...", timeout)
 
         if verbose:
-            # Use --verbose AND --output-format stream-json for real-time streaming
-            # Both are required together in print mode
-            cmd.extend(["--verbose", "--output-format", "stream-json"])
-
-            # Run from project root so relative paths work (tasks/, harbor commands, etc.)
-            # CC can still access repo via absolute path in the prompt
             project_root = os.getcwd()
-            print(
-                "[CC] Running: claude -p <prompt> --allowedTools Read,Write,Edit,Glob,Grep,LS,Bash --verbose --output-format stream-json",
-                flush=True,
-            )
-            print(f"[CC] Working directory: {project_root}", flush=True)
-            print(f"[CC] Repo path: {repo_path}", flush=True)
-            print(f"[CC] Task dir: {task_dir}", flush=True)
+            print("[SDK] Running Claude Code Agent SDK", flush=True)
+            print(f"[SDK] Working directory: {project_root}", flush=True)
+            print(f"[SDK] Repo path: {repo_path}", flush=True)
+            print(f"[SDK] Task dir: {task_dir}", flush=True)
             print("-" * 60, flush=True)
 
-            # Use Popen to stream and parse JSON events in real-time
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    cwd=project_root,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,  # Line buffered
-                )
+        # Configure SDK options
+        options = ClaudeAgentOptions(
+            allowed_tools=["Read", "Write", "Edit", "Glob", "Grep", "LS", "Bash"],
+            permission_mode="bypassPermissions",  # Auto-approve actions
+            cwd=os.getcwd(),  # Run from project root
+            hooks={
+                "PreToolUse": [HookMatcher(matcher="Bash", hooks=[log_harbor_runs])]
+            } if verbose else {},
+        )
 
-                start_time = time.time()
-                _final_result = None
+        # Run with timeout
+        try:
+            async with asyncio.timeout(timeout):
+                response_parts = []
+                
+                if verbose:
+                    # Stream messages with real-time display
+                    async for message in query(prompt=prompt_text, options=options):
+                        _print_sdk_message(message)
+                        
+                        # Collect text for final result
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock):
+                                    response_parts.append(block.text)
+                else:
+                    # Collect messages without printing
+                    async for message in query(prompt=prompt_text, options=options):
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock):
+                                    response_parts.append(block.text)
 
-                # Stream and parse JSON events line-by-line
-                while True:
-                    # Check timeout
-                    elapsed = time.time() - start_time
-                    if elapsed > timeout:
-                        proc.kill()
-                        proc.wait()
-                        logger.warning("CC session timed out after %ds", timeout)
-                        print(f"\n[CC] Timed out after {timeout}s", flush=True)
-                        return _check_validation_state(jobs_dir, task_id, logger, timed_out=True)
+        except TimeoutError:
+            logger.warning("Claude Code session timed out after %ds", timeout)
+            if verbose:
+                print(f"\n[SDK] Timed out after {timeout}s", flush=True)
+            return _check_validation_state(jobs_dir, task_id, logger, timed_out=True)
 
-                    # Use select with timeout to avoid blocking indefinitely on readline
-                    if sys.platform != "win32":
-                        ready, _, _ = select.select([proc.stdout], [], [], 1.0)  # 1 second timeout
-                        if not ready:
-                            continue
-
-                    line = proc.stdout.readline()
-                    if not line:
-                        if proc.poll() is not None:
-                            break
-                        continue
-
-                    # Parse JSON event and display relevant info
-                    try:
-                        event = json.loads(line.strip())
-                        _print_stream_event(event)
-
-                        # Capture final result (not currently used)
-                        if event.get("type") == "result":
-                            _final_result = event
-                    except json.JSONDecodeError:
-                        # Not JSON, print as-is
-                        print(line, end="", flush=True)
-
-                # Drain stderr
-                for line in proc.stderr:
-                    print(f"[stderr] {line}", end="", file=sys.stderr, flush=True)
-
-                returncode = proc.returncode
-
-            except Exception as e:
-                logger.error("CC session failed: %s", e)
-                return MakeItWorkResult(
-                    success=False,
-                    nop_passed=False,
-                    oracle_passed=False,
-                    error_message=f"CC failed: {e}",
-                )
-
+        if verbose:
             print("-" * 60, flush=True)
-            print(f"[CC] Finished with exit code: {returncode}", flush=True)
+            print("[SDK] Session complete", flush=True)
 
-            if returncode != 0:
-                return MakeItWorkResult(
-                    success=False,
-                    nop_passed=False,
-                    oracle_passed=False,
-                    error_message=f"CC exited with code {returncode}",
-                )
+        # Check final state from job files
+        return _check_validation_state(jobs_dir, task_id, logger)
 
-            # Check final state from job files
-            return _check_validation_state(jobs_dir, task_id, logger)
-
-        else:
-            # Capture output
-            cmd.extend(["--output-format", "json"])
-            result = subprocess.run(
-                cmd,
-                cwd=os.getcwd(),  # Run from project root, not repo
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-
-            if result.returncode != 0:
-                error_msg = result.stderr.strip() or result.stdout.strip()
-                return MakeItWorkResult(
-                    success=False,
-                    nop_passed=False,
-                    oracle_passed=False,
-                    error_message=f"CC failed: {error_msg[:500]}",
-                    cc_output=result.stdout[:5000] if result.stdout else None,
-                )
-
-            return _parse_and_check_result(result.stdout, jobs_dir, task_id, logger)
-
-    except FileNotFoundError:
+    except Exception as e:
+        logger.error("Claude Code session failed: %s", e)
         return MakeItWorkResult(
             success=False,
             nop_passed=False,
             oracle_passed=False,
-            error_message="Claude Code CLI not found. Install with: npm install -g @anthropic-ai/claude-code",
+            error_message=f"SDK failed: {e}",
         )
-    except subprocess.TimeoutExpired:
-        logger.warning("CC session timed out after %ds", timeout)
-        # Check if it passed before timeout
-        return _check_validation_state(jobs_dir, task_id, logger, timed_out=True)
 
 
 def _check_validation_state(
@@ -1076,33 +1024,6 @@ def _check_validation_state(
         nop_passed=nop_passed,
         oracle_passed=oracle_passed,
         error_message=error_message,
-    )
-
-
-def _parse_and_check_result(
-    output: str,
-    jobs_dir: Path,
-    task_id: str,
-    logger: logging.Logger,
-) -> MakeItWorkResult:
-    """Parse CC output and check job results."""
-    cc_text = output
-    try:
-        envelope = json.loads(output)
-        if isinstance(envelope, dict) and "result" in envelope:
-            cc_text = str(envelope.get("result", ""))
-    except json.JSONDecodeError:
-        pass
-
-    # Check actual job results
-    nop_passed, oracle_passed = _check_job_results(jobs_dir, task_id)
-    success = nop_passed and oracle_passed
-
-    return MakeItWorkResult(
-        success=success,
-        nop_passed=nop_passed,
-        oracle_passed=oracle_passed,
-        cc_output=cc_text[:5000] if len(cc_text) > 5000 else cc_text,
     )
 
 

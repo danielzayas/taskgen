@@ -17,6 +17,7 @@ dependencies = [
     "openai>=1.43.0",
     "pydantic>=2.8.2",
     "python-dotenv>=1.0.0",
+    "claude-agent-sdk",
     # Hard requirement: laude-institute/harbor; uv maps to Git HEAD via tool.uv.sources
     "harbor",
     # Bundle Terminal-Bench CLI as a dependency so `tb` is available in the same env
