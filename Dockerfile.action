@@ -38,7 +38,7 @@ RUN npm install -g @anthropic-ai/claude-code
 WORKDIR /taskgen
 
 # Copy taskgen source and install
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 
 # Install taskgen with all dependencies
