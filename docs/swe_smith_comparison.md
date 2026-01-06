@@ -43,7 +43,7 @@ TaskGen generates a **single `bug.patch`** that reverses the entire PR using git
 ```mermaid
 flowchart TB
     subgraph Input
-        PR[Merged PR at HEAD]
+        PR[Merged PR; we use the PR head commit SHA]
     end
     
     subgraph Process
@@ -67,7 +67,7 @@ flowchart TB
 **Key characteristics:**
 - Reversal is **deterministic** - git diff produces exact inverse
 - Entire PR reversed **atomically** in one patch
-- Always applies cleanly (HEAD contains exactly the changes being reversed)
+- Always applies cleanly (the PR head commit contains exactly the changes being reversed)
 - No LLM involvement in patch generation
 
 **Patch generation:**
@@ -148,6 +148,8 @@ DO NOT MAKE ANY OTHER CHANGES TO THE SOURCE CODE.
 
 > **Note on TaskGen patch application**: TaskGen clones the repo at HEAD (where the PR is already merged) and applies a reverse diff (HEAD→BASE). Since HEAD contains exactly the changes being reversed, the patch is guaranteed to apply cleanly by construction. Claude Code iterates on *Dockerfile/test.sh configuration* (dependencies, build steps, test commands) but never modifies the patch itself.
 
+> **Terminology clarification**: In TaskGen, **"head"** refers to the *pull request head commit SHA* returned by the GitHub PR API (`pulls[].head.sha`) — i.e., the tip of the PR's source branch. **"base"** refers to the PR base commit SHA (`pulls[].base.sha`) on the target branch at the time of the PR. When this doc says "clone at head" / "HEAD→BASE", it means **PR head SHA → PR base SHA**, not "default branch HEAD".
+
 ---
 
 ## Docker Image Architecture
@@ -186,7 +188,7 @@ RUN apt-get update && apt-get install -y git curl patch build-essential
 # TODO: Install dependencies
 # TODO: Build if needed
 
-RUN git clone <repo> src && cd src && git checkout <sha>
+RUN git clone <repo> src && cd src && git checkout <pr_head_sha>
 COPY bug.patch /tmp/bug.patch
 RUN patch -p1 < /tmp/bug.patch
 

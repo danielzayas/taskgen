@@ -63,7 +63,7 @@ To avoid repeated cloning, TaskGen maintains a local cache of repositories:
 
 - **Module**: `src/taskgen/create/repo_cache.py`
 - **Location**: `.state/repos/`
-- **Behavior**: Clones at HEAD SHA, updates existing clones via fetch
+- **Behavior**: Clones and checks out the **PR head commit SHA** (the tip of the PR's source branch, from the GitHub PR API field `pulls[].head.sha`). This is **not** the "HEAD of the remote repository's default branch". Cached repos are updated via `git fetch` and then checked out at that PR head SHA.
 
 ### 3. Diff Generation
 
@@ -141,7 +141,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Clone repo at HEAD commit (with fix applied)
+# Clone repo at the PR "head" commit SHA (with fix applied)
+# NOTE: "head" here means the PR's head commit (GitHub API: pulls[].head.sha),
+# not the HEAD of the repo's default branch.
 RUN git clone <repo_url> src && \
     cd src && \
     git checkout <head_sha>
