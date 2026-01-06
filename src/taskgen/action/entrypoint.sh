@@ -69,13 +69,17 @@ EOF
     exit 0
 fi
 
-# Check for required API keys
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+# Check for Claude Code authentication (OAuth token preferred, API key as fallback)
+if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
     if [[ "$SKIP_VALIDATION" != "true" ]]; then
-        echo "::warning title=Missing API Key::ANTHROPIC_API_KEY not set. Full validation requires Claude Code."
-        echo "::notice::Setting skip_validation=true due to missing API key"
+        echo "::warning title=Missing API Key::Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY set. Full validation requires Claude Code."
+        echo "::notice::Setting skip_validation=true due to missing authentication"
         SKIP_VALIDATION="true"
     fi
+elif [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+    echo "Using Claude Code OAuth token for authentication"
+else
+    echo "Using Anthropic API key for authentication"
 fi
 
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then

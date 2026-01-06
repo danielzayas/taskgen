@@ -17,8 +17,12 @@ inputs:
     required: true
     default: ${{ github.token }}
   
+  claude_code_oauth_token:
+    description: 'Claude Code OAuth token (preferred for full validation)'
+    required: false
+  
   anthropic_api_key:
-    description: 'Anthropic API key for Claude Code (required for full validation)'
+    description: 'Anthropic API key for Claude Code (fallback if no OAuth token)'
     required: false
   
   openai_api_key:
@@ -81,6 +85,7 @@ runs:
   image: 'Dockerfile.action'
   env:
     GITHUB_TOKEN: ${{ inputs.github_token }}
+    CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude_code_oauth_token }}
     ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
     OPENAI_API_KEY: ${{ inputs.openai_api_key }}
     INPUT_SKIP_VALIDATION: ${{ inputs.skip_validation }}

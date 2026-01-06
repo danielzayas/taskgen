@@ -30,8 +30,9 @@ jobs:
         id: harbor-check
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: Enable full validation with API keys
-          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Optional: Enable full validation
+          # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}  # Preferred
+          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}              # Or use API key
           # openai_api_key: ${{ secrets.OPENAI_API_KEY }}
       
       - uses: actions/upload-artifact@v4
@@ -57,7 +58,8 @@ Most PRs (~90%) won't be eligible—and that's fine! The action explains why.
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `anthropic_api_key` | - | Enables full Docker validation |
+| `claude_code_oauth_token` | - | OAuth token for Claude Code (preferred) |
+| `anthropic_api_key` | - | API key for Claude Code (fallback) |
 | `openai_api_key` | - | Enables LLM substantiality check |
 | `skip_validation` | `false` | Skip Docker validation (faster) |
 | `min_source_files` | `3` | Minimum source files required |
