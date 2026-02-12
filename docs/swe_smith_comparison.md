@@ -11,7 +11,7 @@ This document compares the architectures of **TaskGen** and **SWE-smith PR Mirro
 | **Purpose** | Convert merged PRs into Harbor tasks | Mirror PR bugs into current codebase for SWE-bench |
 | **Task Source** | Merged PRs (reversed at HEAD) | Merged PRs (ported to current commit) |
 | **Target Format** | Harbor task structure | SWE-bench task format |
-| **Reversal Method** | Git diff (entire PR at once) | LLM file-by-file rewrite |
+| **Reversal Method** | Git diff (entire PR at once) -- see [`diff_utils.py::generate_diffs()`](../src/taskgen/create/diff_utils.py) | LLM file-by-file rewrite -- see [`generate.py::recover_sweb_inst()`](../../SWE-smith/swesmith/bug_gen/mirror/generate.py) |
 | **Language Support** | Any (Claude Code detects) | Profile-based (Python primary) |
 | **Automation** | Fully automated with Claude Code | Requires pre-built RepoProfile |
 
@@ -77,6 +77,17 @@ bug_patch = git_diff(head_sha, pr_base_sha, exclude=test_files)
 fix_patch = git_diff(pr_base_sha, head_sha, exclude=test_files)
 ```
 
+> **Source code references (TaskGen):**
+>
+> The entire reversal is implemented in a single function with two `git diff` calls -- no per-file iteration, no LLM involvement:
+>
+> - **[`taskgen/src/taskgen/create/diff_utils.py`](../src/taskgen/create/diff_utils.py)** -- `generate_diffs()` (lines 10-79)
+>   - **Line 71**: `["git", "diff", head_sha, base_sha]` -- produces `bug.patch` (the reverse diff that reverts all PR changes)
+>   - **Line 56**: `["git", "diff", base_sha, head_sha, "--"] + source_files` -- produces `fix.patch` (the forward diff, source files only)
+>   - The key insight: swapping the argument order of `head_sha` and `base_sha` in `git diff` produces the mathematical inverse of the PR
+> - **[`taskgen/src/taskgen/create/orchestrator.py`](../src/taskgen/create/orchestrator.py)** -- `generate_task_universal()` calls `generate_diffs()` at line 218, then writes `bug.patch` (line 281) and `fix.patch` (line 297) to disk
+> - **[`taskgen/src/taskgen/create/task_skeleton.py`](../src/taskgen/create/task_skeleton.py)** -- The Dockerfile template applies the patch at line 107: `RUN patch -p1 < /tmp/bug.patch && rm /tmp/bug.patch`. This single command reverts the entire PR atomically inside the container
+
 ### SWE-smith PR Mirroring: LLM-Based File Rewriting
 
 SWE-smith uses an **LLM to rewrite each file**, porting the bug to the current codebase:
@@ -121,7 +132,22 @@ flowchart TB
 - Can **port historical bugs** to current codebase version
 - LLM handles code drift between PR version and current version
 
-**Recovery prompt (simplified):**
+> **Source code references (SWE-smith):**
+>
+> The reversal logic is spread across three files. Unlike TaskGen's single `git diff`, SWE-smith parses the PR diff into individual file diffs and sends each one to an LLM for rewriting:
+>
+> - **[`SWE-smith/swesmith/bug_gen/mirror/generate.py`](../../SWE-smith/swesmith/bug_gen/mirror/generate.py)**
+>   - `process_single_instance()` (lines 370-473) -- orchestrates the two-path decision: first tries `apply_patches()` directly (line 415); if that fails, falls back to the LLM recovery path via `recover_sweb_inst()`
+>   - `recover_sweb_inst()` (lines 194-344) -- the core file-by-file loop. Parses the PR diff into a `unidiff.PatchSet` (line 207), then iterates: `for idx, file_diff in enumerate(original_patch_set)` (line 227). For each file:
+>     - **Added files**: deleted from disk (line 231)
+>     - **Removed files**: content restored from the diff hunks (lines 243-252)
+>     - **Modified files**: the current file content + the file's diff are sent to the LLM via `_get_llm_recovery_response()` (line 270), which returns the entire file rewritten with the diff reversed
+>   - After each LLM rewrite, if the profile defines a `compile_cmd`, compilation is checked (line 290). On failure, the file is reset and the LLM is retried with error logs appended (up to `max_tries`, default 5)
+>   - `_get_llm_recovery_response()` (lines 160-191) -- constructs the prompt messages and calls `litellm.completion()` (line 184) with `temperature=0`
+> - **[`SWE-smith/swesmith/bug_gen/mirror/prompts.py`](../../SWE-smith/swesmith/bug_gen/mirror/prompts.py)** -- contains all LLM prompts (detailed below)
+> - **[`SWE-smith/swesmith/bug_gen/utils.py`](../../SWE-smith/swesmith/bug_gen/utils.py)** -- `get_patch()` (lines 101-138) captures the git diff after each file rewrite; `apply_patches()` (lines 46-78) merges per-file `.diff` files into a single combined patch
+
+**Recovery prompt** (from [`RECOVERY_PROMPT`](../../SWE-smith/swesmith/bug_gen/mirror/prompts.py) in `prompts.py`, lines 1-24, simplified):
 ```
 You are given the source code of a file and a corresponding diff patch.
 Your task is to rewrite the entire source code while reversing the changes
@@ -133,6 +159,8 @@ If a line was modified, restore it to its previous state.
 
 DO NOT MAKE ANY OTHER CHANGES TO THE SOURCE CODE.
 ```
+
+The actual file content and diff are injected via [`TASK_PROMPT`](../../SWE-smith/swesmith/bug_gen/mirror/prompts.py) (lines 62-85), which formats the source code and diff into `<source_code>` and `<diff_patch>` XML blocks. A one-shot demonstration is provided via `DEMO_PROMPT` (lines 26-60). When compilation fails after an LLM rewrite, [`RECOVERY_COMPILE_ERROR_PROMPT`](../../SWE-smith/swesmith/bug_gen/mirror/prompts.py) (lines 87-97) appends the error logs and asks the LLM to try again -- this retry loop runs up to `max_tries` times (default 5) per file.
 
 ### Comparison: Reversal Approaches
 
